@@ -1,3 +1,4 @@
+import sys
 import os
 import datetime
 import calendar
@@ -5,10 +6,10 @@ import csv
 from copy import copy
 import locale
 from bisect import bisect_left
+import pandas as pd
 
-os.chdir("C:/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone")
-
-locale.setlocale(locale.LC_NUMERIC, 'English_Canada.1252')
+os.chdir("/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone")
+locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
 
 cardNumRangeT = [str(i) for i in range(2,10)] + ['T','J','Q','K','A']
 cardNumRange10 = [str(i) for i in range(2,11)] + ['J','Q','K','A']
@@ -27,8 +28,9 @@ def readABSfile(filename):
     # HANDS INFORMATION
     with open(filename,'r') as f:
         startString = "Stage #"
-        fileContents = [startString + theRest for theRest in f.read().split(startString)]
+        fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
         fileContents = fileContents[1:]
+    
     
     data = []
     lineToRead = True
@@ -63,7 +65,7 @@ def readABSfile(filename):
             dealerEnd = dealerStart + hand[dealerStart:].find(" ")
             dealer = int(hand[dealerStart:dealerEnd])
             # add numPlayers
-            lines = hand.split('\n')
+            lines = [s.rstrip() for s in hand.split('\n')]
             numPlayers = 0
             i = 2
             while lines[i][:5]=="Seat ":
@@ -77,7 +79,6 @@ def readABSfile(filename):
                 board = []
     
             ####################### PLAYER INFORMATION ########################
-            lines = hand.split('\n')
             
             # initialize...
             cp = 0
@@ -104,6 +105,7 @@ def readABSfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:(line.find("-")-1)].strip()))
                 startStacks[player] = toFloat(line[(line.find("(")+2):(line.find("in chips")-1)])
+                assert startStacks[player]!=0
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
@@ -244,8 +246,6 @@ def readABSfile(filename):
                                   'CurrentBet':oldCB,
                                   'CurrentPot':cp-amt,
                                   'NumPlayersLeft':npl+1 if a=='fold' else npl,
-                                  'HoleCard1':holeCards[maybePlayerName][0],
-                                  'HoleCard2':holeCards[maybePlayerName][1],
                                   'Date': dateObj,
                                   'Time': timeObj,
                                   'SmallBlind': sb,
@@ -256,13 +256,18 @@ def readABSfile(filename):
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt
                                   }
-                        for i in range(1,lenBoard+1):
-                            newRow["Board"+str(i)] = deck10.index(board[i-1])
+                        for ii in [1,2]:
+                            c = holeCards[maybePlayerName][ii-1]
+                            if c is not None:
+                                newRow['HoleCard'+str(ii)] = deck10.index(c)
+                        for ii in range(1,lenBoard+1):
+                            newRow["Board"+str(ii)] = deck10.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
             global errors
-            errors.append((filename, src, i))
-            pass
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
     
     return data
                 
@@ -275,10 +280,11 @@ def readABSfile(filename):
 def readFTPfile(filename):
     with open(filename,'r') as f:
         startString = "Full Tilt Poker Game #"
-        fileContents = [startString + theRest for theRest in f.read().split(startString)]
+        fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
         fileContents = fileContents[1:]
+        
     
-    data = []            
+    data = []
     lineToRead = True
     src = "ftp"
     
@@ -312,7 +318,7 @@ def readFTPfile(filename):
                 dealerEnd = dealerStart + hand[dealerStart:].find("\n")
                 dealer = int(hand[dealerStart:dealerEnd])
                 # add numPlayers
-                lines = hand.split('\n')
+                lines = [s.rstrip() for s in hand.split('\n')]
                 numPlayers = 0
                 i = 1
                 while lines[i][:5]=="Seat ":
@@ -327,7 +333,6 @@ def readFTPfile(filename):
                     board = []
             
             ########################## PLAYER INFORMATION #########################
-                lines = hand.split('\n')
                 
                 cp = 0
                 cb = 0
@@ -353,6 +358,7 @@ def readFTPfile(filename):
                     seatnum += 1
                     seatnums.append(int(line[5:line.find(":")]))
                     startStacks[player] = toFloat(line[(line.find("(")+2):line.find(")")])
+                    assert startStacks[player]!=0
                     stacks[player] = startStacks[player]
                     holeCards[player] = [None, None]
                     roundInvestments[player] = 0
@@ -494,8 +500,6 @@ def readFTPfile(filename):
                                       'CurrentPot':cp-amt,
                                       'CurrentBet':oldCB,
                                       'NumPlayersLeft': npl+1 if a=='fold' else npl,
-                                      'HoleCard1':holeCards[maybePlayerName][0],
-                                      'HoleCard2':holeCards[maybePlayerName][1],
                                       'Date': dateObj,
                                       'Time': timeObj,
                                       'SmallBlind': sb,
@@ -506,12 +510,18 @@ def readFTPfile(filename):
                                       'LenBoard': lenBoard,
                                       'InvestedThisRound': roundInvestments[maybePlayerName] - amt
                                       }
-                            for i in range(1,lenBoard+1):
-                                newRow["Board"+str(i)] = deckT.index(board[i-1])
+                            for ii in [1,2]:
+                                c = holeCards[maybePlayerName][ii-1]
+                                if c is not None:
+                                    newRow['HoleCard'+str(ii)] = deckT.index(c)
+                            for ii in range(1,lenBoard+1):
+                                newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                             data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
             global errors
-            errors.append((filename, src, i))
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
             
     return data
 
@@ -524,7 +534,7 @@ def readFTPfile(filename):
 def readONGfile(filename):
     with open(filename,'r') as f:
         startString = "***** History"
-        fileContents = [startString + theRest for theRest in f.read().split(startString)]
+        fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
         fileContents = fileContents[1:]
     
     data = []
@@ -566,7 +576,7 @@ def readONGfile(filename):
             dealerEnd = dealerStart + hand[dealerStart:].find("\n")
             dealer = int(hand[dealerStart:dealerEnd])
             # add numPlayers
-            lines = hand.split('\n')
+            lines = [s.rstrip() for s in hand.split('\n')]
             numPlayers = 0
             i = 5
             while lines[i][:5]=="Seat ":
@@ -595,7 +605,6 @@ def readONGfile(filename):
                 board.append(river.replace(',',''))
             
             ########################## PLAYER INFORMATION #########################
-            lines = hand.split('\n')
             
             cp = 0
             cb = 0
@@ -621,6 +630,7 @@ def readONGfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
                 startStacks[player] = toFloat(line[(line.find("(")+2):line.find(")")])
+                assert startStacks[player]!=0
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
@@ -755,8 +765,6 @@ def readONGfile(filename):
                                   'CurrentPot':cp-amt,
                                   'CurrentBet':oldCB,
                                   'NumPlayersLeft': npl+1 if a=='fold' else npl,
-                                  'HoleCard1':holeCards[maybePlayerName][0],
-                                  'HoleCard2':holeCards[maybePlayerName][1],
                                   'Date': dateObj,
                                   'Time': timeObj,
                                   'SmallBlind': sb,
@@ -767,12 +775,18 @@ def readONGfile(filename):
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt
                                   }
+                        for ii in [1,2]:
+                            c = holeCards[maybePlayerName][ii-1]
+                            if c is not None:
+                                newRow['HoleCard'+str(ii)] = deckT.index(c)
                         for ii in range(1,lenBoard+1):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
             global errors
-            errors.append((filename, src, i))
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
         
     return data
 
@@ -786,7 +800,7 @@ def readPSfile(filename):
     # HANDS TABLE
     with open(filename,'r') as f:
         startString = "PokerStars Game #"
-        fileContents = [startString + theRest for theRest in f.read().split(startString)]
+        fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
         fileContents = fileContents[1:]
     
     data = []
@@ -823,7 +837,7 @@ def readPSfile(filename):
             dealerStart = tableEnd + hand[tableEnd:].find("#") + 1
             dealer = int(hand[dealerStart:dealerEnd])
             # add numPlayers
-            lines = hand.split('\n')
+            lines = [s.rstrip() for s in hand.split('\n')]
             numPlayers = 0
             i = 2
             while lines[i][:5]=="Seat ":
@@ -837,7 +851,6 @@ def readPSfile(filename):
                 board = ''
     
             ####################### PLAYER INFORMATION ########################
-            lines = hand.split('\n')  
             # initialize...
             cp = 0
             cb = 0
@@ -863,6 +876,7 @@ def readPSfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
                 startStacks[player] = toFloat(line[(line.find("$")+1):line.find(" in chips")])
+                assert startStacks[player]!=0
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
@@ -1000,8 +1014,6 @@ def readPSfile(filename):
                                   'CurrentBet':oldCB,
                                   'CurrentPot':cp-amt,
                                   'NumPlayersLeft':npl+1 if a=='fold' else npl,
-                                  'HoleCard1':holeCards[maybePlayerName][0],
-                                  'HoleCard2':holeCards[maybePlayerName][1],
                                   'Date': dateObj,
                                   'Time': timeObj,
                                   'SmallBlind': sb,
@@ -1012,12 +1024,18 @@ def readPSfile(filename):
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt
                                   }
-                        for i in range(1,lenBoard+1):
-                            newRow["Board"+str(i)] = deckT.index(board[i-1])
+                        for ii in [1,2]:
+                            c = holeCards[maybePlayerName][ii-1]
+                            if c is not None:
+                                newRow['HoleCard'+str(ii)] = deckT.index(c)
+                        for ii in range(1,lenBoard+1):
+                            newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
             global errors
-            errors.append((filename, src, i))
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
         
     return data
 
@@ -1031,7 +1049,7 @@ def readPTYfile(filename):
     # HANDS TABLE
     with open(filename,'r') as f:
         startString = "Game #"
-        fileContents = [startString + theRest for theRest in f.read().split(startString)]
+        fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
         fileContents = fileContents[1:]
     
     data = []
@@ -1058,7 +1076,7 @@ def readPTYfile(filename):
             dateEnd = dateStart + hand[dateStart:].find(",")
             month, dateNum = hand[dateStart:dateEnd].split()
             monthConv = {v:k for k,v in enumerate(calendar.month_name)}
-            year = hand[(hand.find("Table") - 5):(hand.find("Table") - 1)]
+            year = hand[(hand.find("Table") - 6):(hand.find("Table") - 2)]
             dateObj = datetime.date(int(year),
                                     int(monthConv[month]),
                                     int(dateNum))
@@ -1101,7 +1119,7 @@ def readPTYfile(filename):
                 board.append(river.replace(',',''))
     
             ####################### PLAYER INFORMATION ########################
-            lines = hand.split('\n')
+            lines = [s.rstrip() for s in hand.split('\n')]
             lines = [l for l in lines if len(l)>0]
             # initialize...
             cp = 0
@@ -1128,6 +1146,7 @@ def readPTYfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
                 startStacks[player] = toFloat(line[(line.find("$")+1):(line.find("USD")-1)])
+                assert startStacks[player]!=0
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
@@ -1212,7 +1231,6 @@ def readPTYfile(filename):
                     elif fullA.find('raises')>=0:
                         a = 'raise'
                         amt = toFloat(fullA[(fullA.find('$')+1):(fullA.find("USD")-1)])
-                        amt += roundInvestments[maybePlayerName]
                         roundInvestments[maybePlayerName] = amt
                         cp += amt
                         oldCB = copy(cb)
@@ -1221,8 +1239,8 @@ def readPTYfile(filename):
                     elif fullA.find('calls')>=0:
                         a = 'call'
                         amt = toFloat(fullA[(fullA.find('$')+1):(fullA.find("USD")-1)])
-                        amt += roundInvestments[maybePlayerName]
-                        roundInvestments[maybePlayerName] = amt
+                        amt -= roundInvestments[maybePlayerName]
+                        roundInvestments[maybePlayerName] += amt
                         cp += amt
                         oldCB = copy(cb)
                         if cb<amt:
@@ -1268,8 +1286,6 @@ def readPTYfile(filename):
                               'CurrentBet':oldCB,
                               'CurrentPot':cp-amt,
                               'NumPlayersLeft':npl+1 if a=='fold' else npl,
-                              'HoleCard1':holeCards[maybePlayerName][0],
-                              'HoleCard2':holeCards[maybePlayerName][1],
                               'Date': dateObj,
                               'Time': timeObj,
                               'SmallBlind': sb,
@@ -1280,182 +1296,20 @@ def readPTYfile(filename):
                               'LenBoard': lenBoard,
                               'InvestedThisRound': roundInvestments[maybePlayerName] - amt
                              }
-                    for i in range(1,lenBoard+1):
-                        newRow["Board"+str(i)] = deckT.index(board[i-1])
+                    for ii in [1,2]:
+                        c = holeCards[maybePlayerName][ii-1]
+                        if c is not None:
+                            newRow['HoleCard'+str(ii)] = deckT.index(c)
+                    for ii in range(1,lenBoard+1):
+                        newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                     data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
             global errors
-            errors.append((filename, src, i))
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
         
     return data
-
-'''
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-###############################################################################
-    
-def readIPNfile(filename):
-    # DFs to write to
-    data = []
-    
-    # root of XML document tree
-    tree = ET.parse(filename)
-    root = tree.getroot()
-    
-    # get blinds
-    fn = filename[filename.find("rawdata")+8:]
-    bb = float(fn[:fn.find("/")])
-    if bb==0.25:
-        sb = 0.1
-    else:
-        sb = bb/2
-    
-    # get table name
-    tableName = root.find("./general/tablename").text
-    
-    # list of all games
-    games = root.findall('./game')
-    
-    for game in games:
-        #try:
-            ############################ HAND INFORMATION #########################
-            # game num
-            gameNum = 'ipn-' + game.attrib['gamecode']
-            # date and time
-            d,t = game.find('./general/startdate').text.split()
-            dateObj = datetime.datetime.strptime(d, "%Y-%m-%d").date()
-            timeObj = datetime.datetime.strptime(t, "%H:%M:%S").time()
-            # table
-            table = tableName
-            # dealer
-            players = game.findall('./general/players/player')
-            dealer = [p.attrib['name'] for p in players 
-                                    if p.attrib['dealer']=='1'][0]
-            # num players
-            numPlayers = len(players)
-            # board
-            board = [cards.text[1:] + cards.text[0] 
-                    if cards.text.find(" ")==-1
-                    else ' '.join([card[1:]+card[0] for card in cards.text.split(" ")])
-                    for cards in game.findall('./round/cards')]
-                            
-            ######################## PLAYER INFORMATION ###########################
-            # rounds are encoded as integers; map integers to names e.g. 'turn'
-            # actions are encoded as integers; map integers to actions
-            actionEncodings = {'0': 'fold',
-                               '1': 'blind',
-                               '2': 'blind',
-                               '3': 'call',
-                               '4': 'check',
-                               '5': 'bet',
-                               '6': 'allIn',
-                               '23': 'raise'}
-            rounds = game.findall('./round')
-            roundNames = ['Blinds','PreFlop','Flop','Turn','River']
-    
-            # initialize some variables for the player features
-            startStacks = {player.attrib['name']: int(player.attrib['chips'][1:])
-                            for player in players}
-            currentStacks = copy(startStacks)
-            cp = 0
-            npl = len(players)
-            
-            # find hole cards
-            holeCards = {p.attrib['name']: [None, None] for p in players}
-            for c in game.findall('./round/cards'):
-                if c.attrib['type']=="Pocket":
-                    cards = c.text.split()
-                    cards = [card[1:] + card[0] for card in cards]
-                    holeCards[c.attrib['player']] = cards
-            
-            for rd in rounds:
-                # game num already found
-                # round
-                r = roundNames[int(rd.attrib['no'])]
-                cb = 0
-                for action in rd.findall('./action'):
-                    isAllIn = False
-                    # player
-                    player = [p for p in players if p.attrib['name']==action.attrib['player']][0]
-                    playerName = player.attrib['name']
-                    # seat num
-                    seatNum = player.attrib['seat']
-                    # start stack
-                    startStack = startStacks[player.attrib['name']]
-                    # amount
-                    amt = action.attrib['sum'][1:].strip()
-                    if 'disconnect' in amt:
-                        amt = 0
-                    else:
-                        amt = toFloat(amt.replace(",","."))
-                    # action and all-in
-                    a = actionEncodings[action.attrib['type']]
-                    if a=='allIn':
-                        isAllIn = True
-                        if amt > cb:
-                            a = 'raise'
-                        elif cb==0:
-                            a = 'bet'
-                        else:
-                            a = 'call'
-                    # current bet and current pot
-                    cp += amt
-                    if amt > cb:
-                        cb = amt
-                    # current stack
-                    currentStack = currentStacks[player.attrib['name']]
-                    currentStacks[player.attrib['name']] += amt                
-                    # num players left
-                    if a == 'fold':
-                        npl -= 1
-                    # cards
-                    playerCards = holeCards[playerName]
-                    #len board
-                    if r=='Flop':
-                        lenBoard = 3
-                    elif r=='Turn':
-                        lenBoard = 4
-                    elif r=='River':
-                        lenBoard = 5
-                    elif rd.find("Card")>=0 or rd=='Blinds':
-                        lenBoard = 0
-                        rd = 'Preflop'
-                    else:
-                        raise ValueError
-                    # add to DF
-                    newAction = {'GameNum':gameNum,
-                                  'SeatNum':seatNum,
-                                  'Round':r,
-                                  'Player':playerName,
-                                  'StartStack':startStack,
-                                  'CurrentStack':currentStack,
-                                  'Action':a,
-                                  'Amount':amt,
-                                  'AllIn':isAllIn,
-                                  'CurrentBet':cb,
-                                  'CurrentPot':cp,
-                                  'NumPlayersLeft':npl+1 if a=='fold' else npl,
-                                  'HoleCard1':playerCards[0],
-                                  'HoleCard2':playerCards[1],
-                                  'Date': dateObj,
-                                  'Time': timeObj,
-                                  'SmallBlind': sb,
-                                  'BigBlind': bb,
-                                  'Table': table.title(),
-                                  'Dealer': dealer,
-                                  'NumPlayers': numPlayers,
-                                  'LenBoard': lenBoard
-                                 }
-                    for i in range(1,lenBoard+1):
-                        newAction["Board"+str(i)] = deck.index(board[i-1])
-                    data.append(newAction)
-        #except (ValueError, IndexError, KeyError, TypeError, AttributeError):
-            #pass
-    
-    return data
-'''
 
 ######################## READ ONE FILE ########################################
     
@@ -1473,9 +1327,7 @@ def readFile(filename):
     return full
         
 ####################### READ ALL FILES ########################################
-
-startPath = "C:/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone/rawdata"
-folders = [startPath+"/"+fdr for fdr in os.listdir(startPath)]
+folders = ["rawdata/"+fdr for fdr in os.listdir('rawdata')]
 allFiles = [folder+"/"+f for folder in folders for f in os.listdir(folder)
             if f.find('ipn ')==-1]
 
@@ -1494,24 +1346,22 @@ def chunks(l,n):
 
 def readAllFiles(files,n):
     global processedCount, totalRows
-    dataWriteToStart = "C:/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone/data/"
     startTime = datetime.datetime.now()
     for ii,chunk in enumerate(chunks(files, n)):
-        if ii>237:
-            dataWriteTo = dataWriteToStart+"/"+"poker"+str(ii)+".csv"
-            with open(dataWriteTo, 'ab') as outputFile:
-                outputFile.write(','.join(keys) + "\n")
-                dictWriter = csv.DictWriter(outputFile, keys)
-                for i,f in enumerate(chunk):
-                    df = readFile(f)
-                    dictWriter.writerows(df)
-                    processedCount += 1
-                    totalRows += len(df)
-                    indRows.append(len(df))
-                outputFile.close()
+        dataWriteTo = "data/"+"poker"+str(ii)+".csv"
+        with open(dataWriteTo, 'ab') as outputFile:
+            outputFile.write(','.join(keys) + "\n")
+            dictWriter = csv.DictWriter(outputFile, keys)
+            for i,f in enumerate(chunk):
+                df = readFile(f)
+                dictWriter.writerows(df)
+                processedCount += 1
+                totalRows += len(df)
+                indRows.append(len(df))
+            outputFile.close()
     print datetime.datetime.now() - startTime
 
-readAllFiles(allFiles, 25)
+readAllFiles(allFiles, 100)
 
 '''
 import itertools
@@ -1526,4 +1376,5 @@ for sr,st in itertools.product(srcs,stks):
         examples.append(random.choice(allMatches))
 
 readAllFiles(examples, len(examples))
+test = pd.read_csv('data/poker0.csv')
 '''
