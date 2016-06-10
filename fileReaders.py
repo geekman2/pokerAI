@@ -1337,34 +1337,26 @@ keys = ['GameNum','Date','Time','SeatNum','Round','Player','StartStack',
         'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers',
         'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5']
 
-processedCount = 0
 totalRows = 0
-indRows = []
 
 def chunks(l,n):
     for i in range(0, len(l), n):
-        yield l[i:i+n]
+        yield i, l[i:i+n]
 
 def readAllFiles(files,n):
-    global processedCount, totalRows
+    global totalRows
     startTime = datetime.datetime.now()
-    for ii,chunk in enumerate(chunks(files, n)):
-        dataWriteTo = "data/"+"poker"+str(ii)+".csv"
+    for ii,chunk in chunks(files, n):
+        dataWriteTo = "data/poker{}.csv".format(ii)
         with open(dataWriteTo, 'ab') as outputFile:
-            outputFile.write(','.join(keys) + "\n")
-            dictWriter = csv.DictWriter(outputFile, keys)
-            for i,f in enumerate(chunk):
-                df = readFile(f)
-                dictWriter.writerows(df)
-                processedCount += 1
-                totalRows += len(df)
-                indRows.append(len(df))
-	    print "Total rows:", totalRows
-	    print "Current runtime:", datetime.datetime.now() - startTime
-	    gc.collect()
+	    df = pd.concat([pd.DataFrame(readFile(f)) for f in chunk])
+	    df.to_csv(outputFile)
+            totalRows += df.shape[0]
+	print "Total rows:", totalRows
+	print "Current runtime:", datetime.datetime.now() - startTime
     print datetime.datetime.now() - startTime
 
-readAllFiles(allFiles, 50)
+readAllFiles(allFiles, 25)
 
 '''
 import itertools
