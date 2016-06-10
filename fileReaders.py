@@ -1,4 +1,5 @@
 import sys
+import gc
 import os
 import datetime
 import calendar
@@ -1358,10 +1359,12 @@ def readAllFiles(files,n):
                 processedCount += 1
                 totalRows += len(df)
                 indRows.append(len(df))
-            outputFile.close()
+	    print "Total rows:", totalRows
+	    print "Current runtime:", datetime.datetime.now() - startTime
+	    gc.collect()
     print datetime.datetime.now() - startTime
 
-readAllFiles(allFiles, 100)
+readAllFiles(allFiles, 50)
 
 '''
 import itertools
