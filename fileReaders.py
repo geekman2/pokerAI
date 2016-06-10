@@ -1349,11 +1349,11 @@ def readAllFiles(files,n):
     for ii,chunk in chunks(files, n):
         dataWriteTo = "data/poker{}.csv".format(ii)
         with open(dataWriteTo, 'ab') as outputFile:
-	    df = pd.concat([pd.DataFrame(readFile(f)) for f in chunk])
-	    df.to_csv(outputFile)
-            totalRows += df.shape[0]
-	print "Total rows:", totalRows
-	print "Current runtime:", datetime.datetime.now() - startTime
+            df = pd.concat([pd.DataFrame(readFile(f)) for f in chunk])
+            df.to_csv(outputFile)
+        totalRows += df.shape[0]
+        print "Total rows:", totalRows
+        print "Current runtime:", datetime.datetime.now() - startTime
     print datetime.datetime.now() - startTime
 
 readAllFiles(allFiles, 25)
