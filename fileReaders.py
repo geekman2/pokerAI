@@ -1,5 +1,3 @@
-import sys
-import gc
 import os
 import datetime
 import calendar
@@ -7,8 +5,6 @@ import csv
 from copy import copy
 import locale
 from bisect import bisect_left
-import pandas as pd
-from pympler.tracker import SummaryTracker
 
 os.chdir("/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone")
 locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
@@ -18,8 +14,6 @@ cardNumRange10 = [str(i) for i in range(2,11)] + ['J','Q','K','A']
 cardSuitRange = ['d','c','h','s']
 deckT = [str(i) + str(j) for i in cardNumRangeT for j in cardSuitRange]
 deck10 = [str(i) + str(j) for i in cardNumRange10 for j in cardSuitRange]
-
-errors = []
 
 def toFloat(s):
     if len(s)>=3 and s[-3]==',':
@@ -266,12 +260,6 @@ def readABSfile(filename):
                             newRow["Board"+str(ii)] = deck10.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            '''
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
-            '''
             pass
     
     return data
@@ -523,12 +511,6 @@ def readFTPfile(filename):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                             data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            '''
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
-            '''
             pass
             
     return data
@@ -791,12 +773,6 @@ def readONGfile(filename):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            '''
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
-            '''
             pass
         
     return data
@@ -1043,12 +1019,6 @@ def readPSfile(filename):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            '''
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
-            '''
             pass
         
     return data
@@ -1318,12 +1288,6 @@ def readPTYfile(filename):
                         newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                     data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            '''
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
-            '''
             pass
         
     return data
@@ -1376,19 +1340,3 @@ def readAllFiles(files,n):
     print datetime.datetime.now() - startTime
 
 readAllFiles(allFiles, 100)
-
-'''
-import itertools
-import random
-srcs = ['abs','ftp','ong','ps','pty']
-stks = ['0.5','0.25','1','2','4','6','10']
-examples = []
-
-for sr,st in itertools.product(srcs,stks):
-    allMatches = [f for f in allFiles if f.find("/"+sr)>=0 and f.find("/"+st+"/")>=0]
-    if allMatches:
-        examples.append(random.choice(allMatches))
-
-readAllFiles(examples, len(examples))
-test = pd.read_csv('data/poker0.csv')
-'''
