@@ -8,6 +8,7 @@ from copy import copy
 import locale
 from bisect import bisect_left
 import pandas as pd
+from pympler.tracker import SummaryTracker
 
 os.chdir("/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone")
 locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
@@ -265,10 +266,13 @@ def readABSfile(filename):
                             newRow["Board"+str(ii)] = deck10.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
+            '''
             global errors
             errors.append(dict(
                 zip(('file','src','hand#','type','value','traceback'),
                     [filename, src, i] + list(sys.exc_info()))))
+            '''
+            pass
     
     return data
                 
@@ -519,10 +523,13 @@ def readFTPfile(filename):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                             data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
+            '''
             global errors
             errors.append(dict(
                 zip(('file','src','hand#','type','value','traceback'),
                     [filename, src, i] + list(sys.exc_info()))))
+            '''
+            pass
             
     return data
 
@@ -784,10 +791,13 @@ def readONGfile(filename):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
+            '''
             global errors
             errors.append(dict(
                 zip(('file','src','hand#','type','value','traceback'),
                     [filename, src, i] + list(sys.exc_info()))))
+            '''
+            pass
         
     return data
 
@@ -1033,10 +1043,13 @@ def readPSfile(filename):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
+            '''
             global errors
             errors.append(dict(
                 zip(('file','src','hand#','type','value','traceback'),
                     [filename, src, i] + list(sys.exc_info()))))
+            '''
+            pass
         
     return data
 
@@ -1305,10 +1318,13 @@ def readPTYfile(filename):
                         newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                     data.append(newRow)
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
+            '''
             global errors
             errors.append(dict(
                 zip(('file','src','hand#','type','value','traceback'),
                     [filename, src, i] + list(sys.exc_info()))))
+            '''
+            pass
         
     return data
 
@@ -1341,22 +1357,25 @@ totalRows = 0
 
 def chunks(l,n):
     for i in range(0, len(l), n):
-        yield i, l[i:i+n]
+        yield l[i:i+n]
 
 def readAllFiles(files,n):
     global totalRows
     startTime = datetime.datetime.now()
-    for ii,chunk in chunks(files, n):
+    for ii,chunk in enumerate(chunks(files, n)):
         dataWriteTo = "data/poker{}.csv".format(ii)
         with open(dataWriteTo, 'ab') as outputFile:
-            df = pd.concat([pd.DataFrame(readFile(f)) for f in chunk])
-            df.to_csv(outputFile)
-        totalRows += df.shape[0]
+            outputFile.write(','.join(keys) + "\n")
+            dictWriter = csv.DictWriter(outputFile, keys)
+            for f in chunk:
+                df = readFile(f)
+                dictWriter.writerows(df)
+                totalRows += len(df)
         print "Total rows:", totalRows
         print "Current runtime:", datetime.datetime.now() - startTime
     print datetime.datetime.now() - startTime
 
-readAllFiles(allFiles, 25)
+readAllFiles(allFiles, 100)
 
 '''
 import itertools
