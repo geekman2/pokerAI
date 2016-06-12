@@ -6,13 +6,9 @@ from bisect import bisect_left
 import csv
 
 # CREATE FEATURE SET
-#startPath = "C:/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone/"
-startPath = '/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone/'
-files = [startPath+"/data/"+f for f in os.listdir(os.path.join(startPath,'data'))]
+files = ["data/"+f for f in os.listdir('data')]
 
 actions = ['none','deadblind','blind','fold','check','call','bet','raise']
-
-os.chdir('/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone/featuresets')
 
 def basicAction(a):
     if a[:3]=='bet':
@@ -23,37 +19,32 @@ def basicAction(a):
         return a
 
 startTime = datetime.now()
-for ii,filename in enumerate(files[:500]):
+for ii,filename in enumerate(files):
     poker = pd.read_csv(filename)
-    print "READ IN POKER", datetime.now() - startTime
+    # make seat number relative to dealer button
     poker['SeatRelDealer'] = np.where(poker.SeatNum > poker.Dealer,
                                         poker.SeatNum - poker.Dealer,
                                         poker.Dealer - poker.SeatNum)
-    # make everything relative to table stakes
+    # action without amount
     poker['BasicAction'] = poker.Action.apply(basicAction)
     poker = poker.join(pd.get_dummies(poker.Action).astype(int))
-    poker['IsAgg'] = poker.bet | poker['raise']
+    # is aggressive or passive action (agg = bet or raise)
+    poker['IsAgg'] = (poker.bet | poker['raise']).astype(bool)
     poker['IsPas'] = ~poker.IsAgg
+    # make columns to do with chips relative to table stakes
     poker['Amount'] = poker.Amount / poker.BigBlind
     poker['CurrentBet'] = poker.CurrentBet / poker.BigBlind
     poker['CurrentPot'] = poker.CurrentPot / poker.BigBlind
     poker['StartStack'] = poker.StartStack / poker.BigBlind
     poker['CurrentStack'] = poker.CurrentStack / poker.BigBlind
     poker['InvestedThisRound'] = poker.InvestedThisRound / poker.BigBlind
-    print "MAKE POKER HELPERS", datetime.now() - startTime
-    poker2 = poker.to_dict('records')
-    print "MAKE POKER DICT", datetime.now() - startTime
+    # WOB = without blinds; remove blind posting actions
     pokerWOB = pd.DataFrame(poker.ix[~((poker.Action=='blind') | (poker.Action=='deadblind'))])
-    print "MAKE POKER WOB", datetime.now() - startTime
     aggStacks = poker.CurrentStack * pokerWOB.IsAgg
     pokerWOB['AggStack'] = aggStacks.replace(to_replace=0, method='ffill').ix[pokerWOB.index]
     aggPos = poker.SeatRelDealer * pokerWOB.IsAgg
     pokerWOB['AggPos'] = aggPos.replace(to_replace=0, method='ffill').ix[pokerWOB.index]
-    print "MAKE POKER WOB HELPERS", datetime.now() - startTime
-    pokerWOB2 = [r for r in poker2 if r['Action']!='blind' and r['Action']!='deadblind']
-    print "MAKE POKER WOB DICT", datetime.now() - startTime
     featureSet = pd.DataFrame({'Player': pokerWOB.Player, 'Action': pokerWOB.Action}, index=pokerWOB.index)
-    print "START FEATURE SET", datetime.now() - startTime
     pokerWOB['BetOverPot'] =  pokerWOB.Amount / pokerWOB.CurrentPot
     bins = [0., 0.25, 0.5, 0.75, 1., 2.]
     featureSet['Action'] = [a + str(bins[bisect_left(bins, b)-1])
@@ -90,63 +81,57 @@ for ii,filename in enumerate(files[:500]):
     #RangeOfBoardCards
     featureSet['RngBoardCardRank'] = ((cards % 13).max(axis=1, skipna=True) - (cards % 13).min(axis=1, skipna=True)).fillna(0)
     #CallersSinceLastBetOrRaise
-    csla = []
-    for i,row in enumerate(pokerWOB2):
-        windowStart = i
-        calls = 0
-        while i>0 and \
-          pokerWOB2[i]['Round']==row['Round'] and pokerWOB2[i]['GameNum']==row['GameNum'] and \
-          not pokerWOB2[i]['Action'] in ['bet','raise']:
-            calls += pokerWOB2[i]['Action'] == 'call'
-            i -= 1
-        csla.append(calls)
-    featureSet['CallersSinceLastAgg'] = csla - pokerWOB.call
+    pokerWOB.groupby(['GameNum','Round','NumAggActionsRound']).call.cumsum()
     #EffectiveStackVSActivePlayers
+    '''
     ESvsAP = []
-    for i,row in enumerate(pokerWOB2):
-        windowStart = pokerWOB.index[i]
-        windowEnd = pokerWOB.index[i]
+    for i,(j,row) in enumerate(pokerWOB.iterrows()):
+        windowStart = j
+        windowEnd = j
         otherStacks = []
         maxOtherStack = 0
         while windowStart>0 and \
-          [poker2[windowStart][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
-            r = poker2[windowStart]
+          [poker.iloc[windowStart][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
+            r = poker.iloc[windowStart]
             if r['Player']!=row['Player'] and r['Action']!='fold' and r['CurrentStack']>maxOtherStack:
                 maxOtherStack = r['CurrentStack']
             windowStart -= 1
-        while windowEnd < len(poker2) and \
-          [poker2[windowEnd][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
-            r = poker2[windowEnd]
+        m = poker.shape[0]
+        while windowEnd < m and \
+          poker.iloc[windowEnd][['GameNum','Round']] == row[['GameNum','Round']]:
+            r = poker.iloc[windowEnd]
             if r['Player']!=row['Player'] and r['CurrentStack']>maxOtherStack:
                 maxOtherStack = r['CurrentStack']
             windowEnd += 1
         ESvsAP.append(min([maxOtherStack, row['CurrentStack']]))
     featureSet['EffectiveStackVSActivePlayers'] = ESvsAP
-    print "NEW ESVAP: ", datetime.now() - startTime
+    '''
     #EffectiveStackVSAggressor
     featureSet['ESvsAgg'] = pd.DataFrame([pokerWOB.AggStack, pokerWOB.CurrentStack]).min()
     #HighestCardOnBoard
     featureSet['HighestCardOnBoard'] = (cards.max(axis=1, skipna=True) % 13).fillna(0)    
     #InPositionVSActivePlayers
+    '''
     ipvap = []
-    for i,row in enumerate(pokerWOB2):
+    for i,(_,row) in enumerate(pokerWOB.iterrows()):
         windowStart = pokerWOB.index[i]
         windowEnd = pokerWOB.index[i]
         minOtherRelSeat = 20
         while windowStart>0 and \
-          [poker2[windowStart][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
-              r = poker2[windowStart]
+          [poker.iloc[windowStart][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
+              r = poker.iloc[windowStart]
               if r['Player']!=row['Player'] and r['Action']!='fold' and r['SeatRelDealer'] < minOtherRelSeat:
-                  minOtherRelSeat = poker2[windowStart]['SeatRelDealer']
+                  minOtherRelSeat = poker.iloc[windowStart]['SeatRelDealer']
               windowStart -= 1
-        while windowEnd<len(poker2) and \
-          [poker2[windowEnd][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
-              r = poker2[windowEnd]
+        while windowEnd<poker.shape[0] and \
+          [poker.iloc[windowEnd][c] for c in ['GameNum','Round']] == [row[c] for c in ['GameNum','Round']]:
+              r = poker.iloc[windowEnd]
               if r['Player']!=row['Player'] and r['SeatRelDealer'] < minOtherRelSeat:
-                  minOtherRelSeat = poker2[windowEnd]['SeatRelDealer']
+                  minOtherRelSeat = poker.iloc[windowEnd]['SeatRelDealer']
               windowEnd -= 1
         ipvap.append(int(row['SeatRelDealer'] < minOtherRelSeat))
     featureSet['InPosVsAP'] = ipvap
+    '''
     #InPositionVSAggressor
     featureSet['InPosVsAgg'] = (pokerWOB.AggPos > pokerWOB.SeatRelDealer).astype(int)
     #MaxCardsFromSameSuit
@@ -158,7 +143,7 @@ for ii,filename in enumerate(files[:500]):
     #MaxCardsSameRank
     boardCols = [[row[c] % 13 if row[c]!='' else '' 
                   for c in ['Board'+str(i) for i in range(1,6)]] 
-                  for row in pokerWOB2]
+                  for i,row in pokerWOB.iterrows()]
     featureSet['MaxCardsSameRank'] = [max(row.count(val) 
                                       for val in (set(row) - set('')))
                                       for row in boardCols]
@@ -175,16 +160,18 @@ for ii,filename in enumerate(files[:500]):
     featureSet['PrevAction'] = poker.groupby(['GameNum','Player']).Action.shift(1).ix[pokerWOB.index].fillna('none')
     featureSet['PrevAction'] = [actions.index(x) for x in featureSet.PrevAction]
     #PlayersLeftToAct
+    '''
     npla = []
-    n = poker2[0]['NumPlayersLeft']
-    for i,row in enumerate(pokerWOB2):
+    n = poker.iloc[0]['NumPlayersLeft']
+    for i,(_,row) in enumerate(pokerWOB.iterrows()):
         n -= 1
-        if row['GameNum']!=poker2[i-1]['GameNum'] or row['Round']!=poker2[i-1]['Round']:
+        if row['GameNum']!=poker.iloc[i-1]['GameNum'] or row['Round']!=poker.iloc[i-1]['Round']:
             n = row['NumPlayersLeft'] - 1
         npla.append(n)
         if row['IsAgg']:
             n = row['NumPlayersLeft'] - 1
     featureSet['PlayersLeftToAct'] = npla
+    '''
     #PotOdds
     featureSet['PotOdds'] = pokerWOB.CurrentPot / featureSet.AmtToCall
     #PotSize
@@ -197,9 +184,7 @@ for ii,filename in enumerate(files[:500]):
     featureSet['NumCallsPrev'] = pokerWOB.groupby(['Round','FacingBet','Player']).call.cumsum()
     featureSet['NumBetsPrev'] = pokerWOB.groupby(['Round','FacingBet','Player']).bet.cumsum()
     featureSet['NumRaisesPrev'] = pokerWOB.groupby(['Round','FacingBet','Player'])['raise'].cumsum()
-    
-    print "MAKE FEATURE SET", datetime.now() - startTime
-    with open("features.csv",'a') as f:
+    with open("/featuresets/features.csv",'a') as f:
         if ii==0:
             featureSet.to_csv(f, index=False, header=True)
         else:
