@@ -21,6 +21,7 @@ def basicAction(a):
 startTime = datetime.now()
 for ii,filename in enumerate(files):
     poker = pd.read_csv(filename)
+    print "READ IN POKER:", datetime.now() - startTime
     # make seat number relative to dealer button
     poker['SeatRelDealer'] = np.where(poker.SeatNum > poker.Dealer,
                                         poker.SeatNum - poker.Dealer,
@@ -43,7 +44,7 @@ for ii,filename in enumerate(files):
     aggStacks = poker.CurrentStack * pokerWOB.IsAgg
     pokerWOB['AggStack'] = aggStacks.replace(to_replace=0, method='ffill').ix[pokerWOB.index]
     aggPos = poker.SeatRelDealer * pokerWOB.IsAgg
-    pokerWOB['AggPos'] = aggPos.replace(to_replace=0, method='ffill').ix[pokerWOB.index]
+    pokerWOB['AggPos'] = aggPos.replace(to_replace=0, method='ffill').ix[pokerWOB.index]    
     featureSet = pd.DataFrame({'Player': pokerWOB.Player, 'Action': pokerWOB.Action}, index=pokerWOB.index)
     pokerWOB['BetOverPot'] =  pokerWOB.Amount / pokerWOB.CurrentPot
     bins = [0., 0.25, 0.5, 0.75, 1., 2.]
@@ -59,7 +60,7 @@ for ii,filename in enumerate(files):
     #Facing a bet
     pokerWOB['FacingBet'] = (pokerWOB.CurrentBet > featureSet.InvestedThisRound).astype(int)
     featureSet['FacingBet'] = pokerWOB.FacingBet
-    #NumPlayersLeft
+    #NumPlayersLeft    
     featureSet['NumPlayersLeftRatio'] = pokerWOB.NumPlayersLeft
     #NumPlayersLeft/NumPlayers ratio
     featureSet['NumPlayersLeftRatio'] = pokerWOB.NumPlayersLeft / pokerWOB.NumPlayers
@@ -77,11 +78,16 @@ for ii,filename in enumerate(files):
     featureSet['AllInIfCall'] = ((featureSet.AmtToCall) > pokerWOB.CurrentStack).astype(int)
     #AverageBoardCardRank
     cards = pokerWOB[['Board1','Board2','Board3','Board4','Board5']]
-    featureSet['AvgBoardCardRank'] = (cards % 13).mean(axis=1, skipna=True).fillna(0)
+    cardsRank = cards % 13
+    cardsSuit = cards % 4
+    featureSet['AvgBoardCardRank'] = cardsRank.mean(axis=1, skipna=True).fillna(0)
     #RangeOfBoardCards
-    featureSet['RngBoardCardRank'] = ((cards % 13).max(axis=1, skipna=True) - (cards % 13).min(axis=1, skipna=True)).fillna(0)
+    featureSet['HighestCardOnBoard'] = (cards.max(axis=1, skipna=True) % 13).fillna(0)
+    featureSet['RngBoardCardRank'] = (featureSet.HighestCardOnBoard -
+                                    cardsRank.min(axis=1, skipna=True)).fillna(0)
     #CallersSinceLastBetOrRaise
-    pokerWOB.groupby(['GameNum','Round','NumAggActionsRound']).call.cumsum()
+    pokerWOB['NumAggActionsRound'] = featureSet.NumAggActionsRound
+    featureSet['CallsSinceLastAgg'] = pokerWOB.groupby(['GameNum','Round','NumAggActionsRound']).call.cumsum()
     #EffectiveStackVSActivePlayers
     '''
     ESvsAP = []
@@ -107,9 +113,11 @@ for ii,filename in enumerate(files):
     featureSet['EffectiveStackVSActivePlayers'] = ESvsAP
     '''
     #EffectiveStackVSAggressor
-    featureSet['ESvsAgg'] = pd.DataFrame([pokerWOB.AggStack, pokerWOB.CurrentStack]).min()
+    featureSet['ESvsAgg'] = (pokerWOB.AggStack >= pokerWOB.CurrentStack) * \
+                            pokerWOB.AggStack + \
+                            (pokerWOB.AggStack <= pokerWOB.CurrentStack) * \
+                            pokerWOB.CurrentStack
     #HighestCardOnBoard
-    featureSet['HighestCardOnBoard'] = (cards.max(axis=1, skipna=True) % 13).fillna(0)    
     #InPositionVSActivePlayers
     '''
     ipvap = []
@@ -141,12 +149,14 @@ for ii,filename in enumerate(files):
         cards = cards.join(pd.DataFrame({'Num'+suit : (cards.iloc[:,5:10]==i).sum(axis=1)}))
     featureSet['MaxCardsFromSameSuit'] = cards.iloc[:,10:].max(axis=1)
     #MaxCardsSameRank
+    '''
     boardCols = [[row[c] % 13 if row[c]!='' else '' 
                   for c in ['Board'+str(i) for i in range(1,6)]] 
                   for i,row in pokerWOB.iterrows()]
     featureSet['MaxCardsSameRank'] = [max(row.count(val) 
                                       for val in (set(row) - set('')))
                                       for row in boardCols]
+    '''
     #NumBets
     pokerWOB['IsBet'] = np.equal(pokerWOB.Action, 'bet').astype(int)
     featureSet['NumBets'] = pokerWOB.groupby('GameNum').IsBet.cumsum()
@@ -184,14 +194,16 @@ for ii,filename in enumerate(files):
     featureSet['NumCallsPrev'] = pokerWOB.groupby(['Round','FacingBet','Player']).call.cumsum()
     featureSet['NumBetsPrev'] = pokerWOB.groupby(['Round','FacingBet','Player']).bet.cumsum()
     featureSet['NumRaisesPrev'] = pokerWOB.groupby(['Round','FacingBet','Player'])['raise'].cumsum()
-    with open("/featuresets/features.csv",'a') as f:
+    print "FEATURE SET COMPLETE", datetime.now() - startTime
+    with open("featuresets/features.csv",'a') as f:
         if ii==0:
             featureSet.to_csv(f, index=False, header=True)
         else:
             featureSet.to_csv(f, index=False, header=False)
-    print datetime.now() - startTime
+    print "FEATURES WRITTEN TO CSV", datetime.now() - startTime
 
 # BREAK UP FEATURE SET INTO 8 FILES
+os.chdir('featuresets')
 with open("features.csv") as f:
     rounds = ['Preflop','Flop','Turn','River']
     
