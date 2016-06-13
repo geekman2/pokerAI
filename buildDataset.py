@@ -239,9 +239,3 @@ with open("features.csv") as f:
             rows = [{k: row[k] for k in allFeatureSets[j]} for row in data[j]]
             dictWriter.writerows(rows)
     data = [[] for i in xrange(8)]
-    
-    
-startTime = datetime.now()
-for i,row in poker.iterrows():
-    1+1
-print datetime.now() - startTime
