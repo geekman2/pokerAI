@@ -7,7 +7,6 @@ import locale
 from bisect import bisect_left
 import multiprocessing
 
-os.chdir("/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone")
 locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
 
 cardNumRangeT = [str(i) for i in range(2,10)] + ['T','J','Q','K','A']
@@ -27,7 +26,6 @@ def readABSfile(filename):
         startString = "Stage #"
         fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
         fileContents = fileContents[1:]
-    
     
     data = []
     lineToRead = True
@@ -1351,13 +1349,15 @@ def worker(tup):
             df = readFile(f)
             dictWriter.writerows(df)
             totalRows += len(df)
+
 def main():
     startTime = datetime.datetime.now()
     p = multiprocessing.Pool(8)
-    p.map_async(worker,enumerate(chunks(allFiles, 25)))
+    p.map_async(worker,enumerate(chunks(allFiles, 100)))
     p.close()
     p.join()
     print "Total rows:", totalRows
     print "Current runtime:", datetime.datetime.now() - startTime
+
 if __name__ == "__main__":
     main()

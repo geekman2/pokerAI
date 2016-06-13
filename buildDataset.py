@@ -93,18 +93,18 @@ for ii,filename in enumerate(files):
     apDF = zip(*[poker[c] for c in relevantCols])
     APbyRow = []
     m = len(apDF)
-    for i,(g,r,p,a,s) in enumerate(apDF):
+    for i,(gameNum,rd,player,action,currentStack) in enumerate(apDF):
         ap = []
         windowStart = i
         windowEnd = i
-        while windowStart>0 and apDF[windowStart][:2]==(g,r):
+        while windowStart>0 and apDF[windowStart][:2]==(gameNum,rd):
             row = apDF[windowStart]
-            if row[2]!=p and row[3]!='fold':
+            if row[2]!=player and row[3]!='fold':
                 ap.append(windowStart)
             windowStart -= 1
-        while windowEnd<m and apDF[windowEnd][:2]==(g,r):
+        while windowEnd<m and apDF[windowEnd][:2]==(gameNum,rd):
             row = apDF[windowEnd]
-            if row[2]!=p:
+            if row[2]!=player:
                 ap.append(windowEnd)
             windowEnd += 1
         APbyRow.append(ap)
@@ -114,8 +114,7 @@ for ii,filename in enumerate(files):
     maxOtherStacks = [max(stacks[p] for p in ap) for ap in APbyRow]
     featureSet['EffectiveStack'] = [min(l) 
                                 for i,l in enumerate(zip(stacks,maxOtherStacks))
-                                if i in pokerWOB.index]
-    
+                                if i in pokerWOB.index]    
     #EffectiveStackVSAggressor
     featureSet['ESvsAgg'] = (pokerWOB.AggStack>=pokerWOB.CurrentStack)*pokerWOB.AggStack + \
                             (pokerWOB.CurrentStack>=pokerWOB.AggStack)*pokerWOB.CurrentStack
@@ -155,13 +154,13 @@ for ii,filename in enumerate(files):
     nplaDF = zip(*[poker[c] for c in relevantCols])
     npla = []
     n = nplaDF[0][-1]
-    for i,(g,r,p,a,l,ag) in enumerate(nplaDF):
+    for i,(gameNum,rd,player,action,numPlayersLeft,isAgg) in enumerate(nplaDF):
         n -= 1
-        if g!=nplaDF[i-1][0] or r!=nplaDF[i-1][1]:
-            n = l - 1
+        if gameNum!=nplaDF[i-1][0] or rd!=nplaDF[i-1][1]:
+            n = numPlayersLeft - 1
         npla.append(n)
-        if ag:
-            n = l - 1
+        if isAgg:
+            n = numPlayersLeft - 1
     featureSet['PlayersLeftToAct'] = [npla[i] for i in pokerWOB.index]
     #PotOdds
     featureSet['PotOdds'] = pokerWOB.CurrentPot / featureSet.AmtToCall
