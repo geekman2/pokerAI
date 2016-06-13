@@ -5,7 +5,6 @@ import csv
 from copy import copy
 import locale
 from bisect import bisect_left
-import multiprocessing
 
 os.chdir("/media/OS/Users/Nash Taylor/Documents/My Documents/School/Machine Learning Nanodegree/Capstone")
 locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
@@ -1340,24 +1339,4 @@ def readAllFiles(files,n):
         print "Current runtime:", datetime.datetime.now() - startTime
     print datetime.datetime.now() - startTime
 
-def worker(tup):
-    global totalRows
-    ii,chunk = tup
-    dataWriteTo = "data/poker{}.csv".format(ii)
-    with open(dataWriteTo, 'ab') as outputFile:
-        outputFile.write(','.join(keys) + "\n")
-        dictWriter = csv.DictWriter(outputFile, keys)
-        for f in chunk:
-            df = readFile(f)
-            dictWriter.writerows(df)
-            totalRows += len(df)
-def main():
-    startTime = datetime.datetime.now()
-    p = multiprocessing.Pool(8)
-    p.map_async(worker,enumerate(chunks(allFiles, 25)))
-    p.close()
-    p.join()
-    print "Total rows:", totalRows
-    print "Current runtime:", datetime.datetime.now() - startTime
-if __name__ == "__main__":
-    main()
+readAllFiles(allFiles, 100)
