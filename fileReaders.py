@@ -1,3 +1,4 @@
+import sys
 import os
 import datetime
 import calendar
@@ -5,6 +6,7 @@ import csv
 from copy import copy
 import locale
 from bisect import bisect_left
+import codecs
 import multiprocessing
 
 locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
@@ -14,6 +16,8 @@ cardNumRange10 = [str(i) for i in range(2,11)] + ['J','Q','K','A']
 cardSuitRange = ['d','c','h','s']
 deckT = [str(i) + str(j) for i in cardNumRangeT for j in cardSuitRange]
 deck10 = [str(i) + str(j) for i in cardNumRange10 for j in cardSuitRange]
+
+errors = []
 
 def toFloat(s):
     if len(s)>=3 and s[-3]==',':
@@ -62,10 +66,10 @@ def readABSfile(filename):
             # add numPlayers
             lines = [s.rstrip() for s in hand.split('\n')]
             numPlayers = 0
-            i = 2
-            while lines[i][:5]=="Seat ":
+            j = 2
+            while lines[j][:5]=="Seat ":
                 numPlayers += 1
-                i += 1
+                j += 1
             # add board
             boardLine = lines[lines.index("*** SUMMARY ***") + 2]
             if boardLine[:5]=="Board":
@@ -86,6 +90,8 @@ def readABSfile(filename):
             holeCards = {}
             roundInvestments = {}
             lenBoard = 0
+            isAllIn = False
+            lastNewRoundLine = -1
             
             # go through lines to populate seats
             n = 2
@@ -100,10 +106,11 @@ def readABSfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:(line.find("-")-1)].strip()))
                 startStacks[player] = toFloat(line[(line.find("(")+2):(line.find("in chips")-1)])
-                assert startStacks[player]!=0
+                assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
+                roundActionNum = 1
                 npl += 1
                 n += 1
             
@@ -111,14 +118,14 @@ def readABSfile(filename):
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
             
             # go through again to collect hole card info
-            for line in lines:
+            for j,line in enumerate(lines):
                 maybePlayerName = line[:line.find(" ")]
                 if maybePlayerName in seats.keys() and line.find("Shows")>=0:
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
                     holeCards[maybePlayerName] = hc
             
-            for line in lines:
+            for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
                 # stop skipping once encounter "Stage"
                 if line.find("Stage")>=0:
@@ -134,12 +141,17 @@ def readABSfile(filename):
                         stage = src + "-" + line[(line.find("#")+1):line.find(":")]
                        
                     elif line[:3]=="***":
+                        nar = j - lastNewRoundLine
+                        lastNewRoundLine = j
                         for key in roundInvestments:
                             roundInvestments[key] = 0
                         rdStart = line.find(" ")+1
                         rdEnd = rdStart + line[rdStart:].find("*") - 1
                         rd = line[rdStart:rdEnd].title().strip()
                         if rd!='Pocket Cards':
+                            if nar>1:
+                                assert roundActionNum!=1, "round with one action"
+                            roundActionNum = 1
                             cb = 0
                         if rd=='Flop':
                             lenBoard = 3
@@ -225,11 +237,12 @@ def readABSfile(filename):
                         else:
                             continue
                         if oldCB > (roundInvestments[maybePlayerName] - amt):
-                            assert a!='bet'
+                            assert a!='bet', "illegal action"
                         else:
-                            assert a!='call'
+                            assert a!='call', "illegal action"
                         # consistent formatting for round
                         newRow = {'GameNum':stage,
+                                  'RoundActionNum':roundActionNum,
                                   'SeatNum':seat,
                                   'Round':rd,
                                   'Player':maybePlayerName,
@@ -258,8 +271,14 @@ def readABSfile(filename):
                         for ii in range(1,lenBoard+1):
                             newRow["Board"+str(ii)] = deck10.index(board[ii-1])
                         data.append(newRow)
+                        roundActionNum += 1
+            if data[-1]['RoundActionNum']==1:
+                data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
+            global errors
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
     
     return data
                 
@@ -270,11 +289,10 @@ def readABSfile(filename):
 ###############################################################################
 
 def readFTPfile(filename):
-    with open(filename,'r') as f:
+    with codecs.open(filename, encoding='utf-8') as f:
         startString = "Full Tilt Poker Game #"
         fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
-        fileContents = fileContents[1:]
-        
+        fileContents = fileContents[1:]        
     
     data = []
     lineToRead = True
@@ -282,235 +300,245 @@ def readFTPfile(filename):
     
     for i,hand in enumerate(fileContents):
         try:
+            assert not "@" in hand and not "\x16" in hand, "corrupted data"
             ####################### HAND INFORMATION ##############################
-            if hand.find('canceled')==-1:
-                # add small and big blinds
-                fn = filename[filename.find("rawdata")+8:]
-                bb = float(fn[:fn.find("/")])
-                if bb==0.25:
-                    sb = 0.1
-                else:
-                    sb = bb/2
-                # add date
-                dateEnd = hand.find("\n")
-                dateStart = dateEnd - 10
-                dateStr = hand[dateStart:dateEnd]
-                dateObj = datetime.datetime.strptime(dateStr, '%Y/%m/%d').date()
-                # add time
-                timeEnd = dateStart - 6
-                timeStart = timeEnd - 8
-                timeStr = hand[timeStart:timeEnd].strip()
-                timeObj = datetime.datetime.strptime(timeStr, '%H:%M:%S').time()
-                # add table
-                tableStart = hand.find("Table") + 6
-                tableEnd = tableStart + hand[tableStart:].find(" ")
-                table = hand[tableStart:tableEnd]
-                # add dealer
-                dealerStart = hand.find("seat #") + 6
-                dealerEnd = dealerStart + hand[dealerStart:].find("\n")
-                dealer = int(hand[dealerStart:dealerEnd])
-                # add numPlayers
-                lines = [s.rstrip() for s in hand.split('\n')]
-                numPlayers = 0
-                i = 1
-                while lines[i][:5]=="Seat ":
-                    if lines[i].find("sitting out")==-1:
-                        numPlayers += 1
-                    i += 1
-                # add board
-                boardLine = lines[lines.index("*** SUMMARY ***") + 2]
-                if boardLine[:5]=="Board":
-                    board = boardLine[8:-1].split()
-                else:
-                    board = []
-            
+            # add small and big blinds
+            fn = filename[filename.find("rawdata")+8:]
+            bb = float(fn[:fn.find("/")])
+            if bb==0.25:
+                sb = 0.1
+            else:
+                sb = bb/2
+            # add date
+            dateEnd = hand.find("\n")
+            dateStart = dateEnd - 10
+            dateStr = hand[dateStart:dateEnd]
+            dateObj = datetime.datetime.strptime(dateStr, '%Y/%m/%d').date()
+            # add time
+            timeEnd = dateStart - 6
+            timeStart = timeEnd - 8
+            timeStr = hand[timeStart:timeEnd].strip()
+            timeObj = datetime.datetime.strptime(timeStr, '%H:%M:%S').time()
+            # add table
+            tableStart = hand.find("Table") + 6
+            tableEnd = tableStart + hand[tableStart:].find(" ")
+            table = hand[tableStart:tableEnd]
+            # add dealer
+            dealerStart = hand.find("seat #") + 6
+            dealerEnd = dealerStart + hand[dealerStart:].find("\n")
+            dealer = int(hand[dealerStart:dealerEnd])
+            # add numPlayers
+            lines = [s.rstrip() for s in hand.split('\n')]
+            numPlayers = 0
+            j = 1
+            while lines[j][:5]=="Seat ":
+                if lines[j].find("sitting out")==-1:
+                    numPlayers += 1
+                j += 1
+            # add board
+            boardLine = lines[lines.index("*** SUMMARY ***") + 2]
+            if boardLine[:5]=="Board":
+                board = boardLine[8:-1].split()
+            else:
+                board = []
+        
             ########################## PLAYER INFORMATION #########################
-                
-                cp = 0
-                cb = 0
-                npl = 0
-                rd = "Preflop"
-                seats = {}
-                startStacks = {}
-                stacks = {}
-                holeCards = {}
-                roundInvestments = {}
-                lenBoard = 0
-                
-                # go through lines to populate seats
-                n = 1
-                seatnum = 1
-                seatnums = []
-                while lines[n][:4]=="Seat":
-                    line = lines[n]
-                    playerStart = line.find(":")+2
-                    playerEnd = playerStart + line[playerStart:].find(' ')
-                    player = line[playerStart:playerEnd]
-                    seats[player] = seatnum
-                    seatnum += 1
-                    seatnums.append(int(line[5:line.find(":")]))
-                    startStacks[player] = toFloat(line[(line.find("(")+2):line.find(")")])
-                    assert startStacks[player]!=0
-                    stacks[player] = startStacks[player]
-                    holeCards[player] = [None, None]
-                    roundInvestments[player] = 0
-                    n += 1
-                    npl += 1
-                          
-                # make dealer num relative to missing seats
-                dealer = bisect_left(seatnums, dealer) % len(seatnums)
+            
+            cp = 0
+            cb = 0
+            npl = 0
+            rd = "Preflop"
+            seats = {}
+            startStacks = {}
+            stacks = {}
+            holeCards = {}
+            roundInvestments = {}
+            lenBoard = 0
+            
+            # go through lines to populate seats
+            n = 1
+            seatnum = 1
+            seatnums = []
+            while lines[n][:4]=="Seat":
+                line = lines[n]
+                playerStart = line.find(":")+2
+                playerEnd = playerStart + line[playerStart:].find(' ')
+                player = line[playerStart:playerEnd]
+                seats[player] = seatnum
+                seatnum += 1
+                seatnums.append(int(line[5:line.find(":")]))
+                startStacks[player] = toFloat(line[(line.find("(")+2):line.find(")")])
+                assert startStacks[player]!=0, "start stack of 0"
+                stacks[player] = startStacks[player]
+                holeCards[player] = [None, None]
+                roundInvestments[player] = 0
+                roundActionNum = 1
+                n += 1
+                npl += 1
+                      
+            # make dealer num relative to missing seats
+            dealer = bisect_left(seatnums, dealer) % len(seatnums)
 
-                # go through again to collect hole card info
-                for line in lines:
+            # go through again to collect hole card info
+            for line in lines:
+                maybePlayerName = line[:line.find(" ")]
+                if maybePlayerName in seats.keys() and line.find("shows [")>=0:
+                    hc = line[(line.find("[")+1):line.find("]")]
+                    hc = hc.split()
+                    holeCards[maybePlayerName] = hc
+            
+            for line in lines:
+                # skip SUMMARY section by changing lineToRead when encounter it
+                # stop skipping once encounter "Stage" or "Game" or whatever
+                if line.find("Game")>=0:
+                    lineToRead = True
+                elif line=="*** SUMMARY ***":
+                    lineToRead = False
+            
+                if lineToRead:
+                    newRow = {}
                     maybePlayerName = line[:line.find(" ")]
-                    if maybePlayerName in seats.keys() and line.find("shows [")>=0:
-                        hc = line[(line.find("[")+1):line.find("]")]
-                        hc = hc.split()
-                        holeCards[maybePlayerName] = hc
-                
-                for line in lines:
-                    # skip SUMMARY section by changing lineToRead when encounter it
-                    # stop skipping once encounter "Stage" or "Game" or whatever
-                    if line.find("Game")>=0:
-                        lineToRead = True
-                    elif line=="*** SUMMARY ***":
-                        lineToRead = False
-                
-                    if lineToRead:
-                        newRow = {}
-                        maybePlayerName = line[:line.find(" ")]
-                        seatnum = 1
+                    seatnum = 1
+                    
+                    if line[:20]=="Full Tilt Poker Game":
+                        stage = src + "-" + line[(line.find("#")+1):line.find(":")]
                         
-                        if line[:20]=="Full Tilt Poker Game":
-                            stage = src + "-" + line[(line.find("#")+1):line.find(":")]
-                            
-                        elif line[:3]=="***":
-                            for key in roundInvestments:
-                                roundInvestments[key] = 0
-                            rdStart = line.find(" ")+1
-                            rdEnd = rdStart + line[rdStart:].find("*") - 1
-                            rd = line[rdStart:rdEnd]
-                            if rd!="HOLE CARDS":
-                                cb = 0
-                            rd = rd.title().strip()
-                            if rd=='Flop':
-                                lenBoard = 3
-                            elif rd=='Turn':
-                                lenBoard = 4
-                            elif rd=='River':
-                                lenBoard = 5
-                            elif rd.find("Card")>=0:
-                                rd = 'Preflop'
-                            elif rd=='Show Down':
-                                continue
+                    elif line[:3]=="***":
+                        for key in roundInvestments:
+                            roundInvestments[key] = 0
+                        rdStart = line.find(" ")+1
+                        rdEnd = rdStart + line[rdStart:].find("*") - 1
+                        rd = line[rdStart:rdEnd]
+                        rd = rd.title().strip()
+                        if rd!="Hole Cards":
+                            assert roundActionNum!=1, "round with one action"
+                            roundActionNum = 1
+                            cb = 0
+                        if rd=='Flop':
+                            lenBoard = 3
+                        elif rd=='Turn':
+                            lenBoard = 4
+                        elif rd=='River':
+                            lenBoard = 5
+                        elif rd.find("Card")>=0:
+                            rd = 'Preflop'
+                        elif rd=='Show Down':
+                            continue
+                        else:
+                            raise ValueError
+                    
+                    # create new row IF row is an action (starts with encrypted player name)
+                    elif maybePlayerName in seats.keys():
+                        seat = seats[maybePlayerName]
+                        fullA = line[(line.find(" ") + 1):].strip()
+                        isAllIn = fullA.find("all in")>=0
+                        if fullA.find("posts")>=0:
+                            if fullA.find('dead')>=0:
+                                a = 'deadblind'
+                                amt = toFloat(fullA[fullA.find("$")+1:])
                             else:
-                                raise ValueError
-                        
-                        # create new row IF row is an action (starts with encrypted player name)
-                        elif maybePlayerName in seats.keys():
-                            seat = seats[maybePlayerName]
-                            fullA = line[(line.find(" ") + 1):].strip()
-                            isAllIn = fullA.find("all in")>=0
-                            if fullA.find("posts")>=0:
-                                if fullA.find('dead')>=0:
-                                    a = 'deadblind'
-                                    amt = toFloat(fullA[fullA.find("$")+1:])
-                                else:
-                                    a = 'blind'
-                                    amt = toFloat(fullA[fullA.find("$")+1:])
-                                cp += amt
-                                roundInvestments[maybePlayerName] += amt
-                                oldCB = copy(cb)
-                                if cb<amt:
-                                    cb = amt
-                                stacks[maybePlayerName] -= amt
-                            elif fullA=="folds":
-                                a = 'fold'
-                                amt = 0.
-                                npl -= 1
-                                seats.pop(maybePlayerName)
-                                oldCB = copy(cb)
-                            elif fullA.find('checks')>=0:
-                                a = 'check'
-                                amt = 0.
-                                oldCB = copy(cb)
-                            elif fullA.find("bets")>=0 and fullA.find("Uncalled")==-1:
-                                a = 'bet'
-                                if isAllIn or fullA.find(", ")>=0:
-                                    amt = toFloat(fullA[(fullA.find('$')+1):fullA.find(", ")])
-                                else:
-                                    amt = toFloat(fullA[(fullA.find('$')+1):])
-                                cp += amt
-                                roundInvestments[maybePlayerName] += amt
-                                oldCB = copy(cb)
+                                a = 'blind'
+                                amt = toFloat(fullA[fullA.find("$")+1:])
+                            cp += amt
+                            roundInvestments[maybePlayerName] += amt
+                            oldCB = copy(cb)
+                            if cb<amt:
                                 cb = amt
-                                stacks[maybePlayerName] -= amt
-                            elif fullA.find('raises')>=0:
-                                a = 'raise'
-                                if isAllIn or fullA.find(", ")>=0:
-                                    amt = toFloat(fullA[(fullA.find('$')+1):fullA.find(", ")])
-                                else:
-                                    amt = toFloat(fullA[(fullA.find('$')+1):])
-                                roundInvestments[maybePlayerName] = amt
-                                cp += amt
-                                oldCB = copy(cb)
-                                if cb<amt:
-                                    cb = amt
-                                stacks[maybePlayerName] -= amt
-                            elif fullA.find('calls')>=0:
-                                a = 'call'
-                                if isAllIn or fullA.find(", ")>=0:
-                                    amt = toFloat(fullA[(fullA.find('$')+1):fullA.find(", ")])
-                                else:
-                                    amt = toFloat(fullA[(fullA.find('$')+1):])
-                                cp += amt
-                                roundInvestments[maybePlayerName] += amt
-                                stacks[maybePlayerName] -= amt
-                                oldCB = copy(cb)
-                                if cb<amt:
-                                    cb = amt
-                            elif fullA=='is sitting out':
-                                numPlayers -= 1
-                                npl -= 1
-                                seats.pop(maybePlayerName)
-                                continue
+                            stacks[maybePlayerName] -= amt
+                        elif fullA=="folds":
+                            a = 'fold'
+                            amt = 0.
+                            npl -= 1
+                            seats.pop(maybePlayerName)
+                            oldCB = copy(cb)
+                        elif fullA.find('checks')>=0:
+                            a = 'check'
+                            amt = 0.
+                            oldCB = copy(cb)
+                        elif fullA.find("bets")>=0 and fullA.find("Uncalled")==-1:
+                            a = 'bet'
+                            if isAllIn or fullA.find(", ")>=0:
+                                amt = toFloat(fullA[(fullA.find('$')+1):fullA.find(", ")])
                             else:
-                                continue
-                            if oldCB > (roundInvestments[maybePlayerName] - amt):
-                                assert a!='bet'
+                                amt = toFloat(fullA[(fullA.find('$')+1):])
+                            cp += amt
+                            roundInvestments[maybePlayerName] += amt
+                            oldCB = copy(cb)
+                            cb = amt
+                            stacks[maybePlayerName] -= amt
+                        elif fullA.find('raises')>=0:
+                            a = 'raise'
+                            if isAllIn or fullA.find(", ")>=0:
+                                amt = toFloat(fullA[(fullA.find('$')+1):fullA.find(", ")])
                             else:
-                                assert a!='call'
-                            newRow = {'GameNum':stage,
-                                      'SeatNum':seat,
-                                      'Round':rd,
-                                      'Player':maybePlayerName,
-                                      'StartStack':startStacks[maybePlayerName],
-                                      'CurrentStack':stacks[maybePlayerName] + amt,
-                                      'Action':a,
-                                      'Amount':amt,
-                                      'AllIn':isAllIn,
-                                      'CurrentPot':cp-amt,
-                                      'CurrentBet':oldCB,
-                                      'NumPlayersLeft': npl+1 if a=='fold' else npl,
-                                      'Date': dateObj,
-                                      'Time': timeObj,
-                                      'SmallBlind': sb,
-                                      'BigBlind': bb,
-                                      'Table': table.title(),
-                                      'Dealer': dealer,
-                                      'NumPlayers': numPlayers,
-                                      'LenBoard': lenBoard,
-                                      'InvestedThisRound': roundInvestments[maybePlayerName] - amt
-                                      }
-                            for ii in [1,2]:
-                                c = holeCards[maybePlayerName][ii-1]
-                                if c is not None:
-                                    newRow['HoleCard'+str(ii)] = deckT.index(c)
-                            for ii in range(1,lenBoard+1):
-                                newRow["Board"+str(ii)] = deckT.index(board[ii-1])
-                            data.append(newRow)
+                                amt = toFloat(fullA[(fullA.find('$')+1):])
+                            roundInvestments[maybePlayerName] = amt
+                            cp += amt
+                            oldCB = copy(cb)
+                            if cb<amt:
+                                cb = amt
+                            stacks[maybePlayerName] -= amt
+                        elif fullA.find('calls')>=0:
+                            a = 'call'
+                            if isAllIn or fullA.find(", ")>=0:
+                                amt = toFloat(fullA[(fullA.find('$')+1):fullA.find(", ")])
+                            else:
+                                amt = toFloat(fullA[(fullA.find('$')+1):])
+                            cp += amt
+                            roundInvestments[maybePlayerName] += amt
+                            stacks[maybePlayerName] -= amt
+                            oldCB = copy(cb)
+                            if cb<amt:
+                                cb = amt
+                        elif fullA=='is sitting out':
+                            numPlayers -= 1
+                            npl -= 1
+                            seats.pop(maybePlayerName)
+                            continue
+                        else:
+                            continue
+                        if oldCB > (roundInvestments[maybePlayerName] - amt):
+                            assert a!='bet', "illegal action"
+                        else:
+                            assert a!='call', "illegal action"
+                        newRow = {'GameNum':stage,
+                                  'RoundActionNum':roundActionNum,
+                                  'SeatNum':seat,
+                                  'Round':rd,
+                                  'Player':maybePlayerName,
+                                  'StartStack':startStacks[maybePlayerName],
+                                  'CurrentStack':stacks[maybePlayerName] + amt,
+                                  'Action':a,
+                                  'Amount':amt,
+                                  'AllIn':isAllIn,
+                                  'CurrentPot':cp-amt,
+                                  'CurrentBet':oldCB,
+                                  'NumPlayersLeft': npl+1 if a=='fold' else npl,
+                                  'Date': dateObj,
+                                  'Time': timeObj,
+                                  'SmallBlind': sb,
+                                  'BigBlind': bb,
+                                  'Table': table.title(),
+                                  'Dealer': dealer,
+                                  'NumPlayers': numPlayers,
+                                  'LenBoard': lenBoard,
+                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt
+                                  }
+                        for ii in [1,2]:
+                            c = holeCards[maybePlayerName][ii-1]
+                            if c is not None:
+                                newRow['HoleCard'+str(ii)] = deckT.index(c)
+                        for ii in range(1,lenBoard+1):
+                            newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        data.append(newRow)
+                        roundActionNum += 1
+            if data[-1]['RoundActionNum']==1:
+                data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
+            global errors
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
             
     return data
 
@@ -567,11 +595,11 @@ def readONGfile(filename):
             # add numPlayers
             lines = [s.rstrip() for s in hand.split('\n')]
             numPlayers = 0
-            i = 5
-            while lines[i][:5]=="Seat ":
-                if lines[i].find("sitting out")==-1:
+            j = 5
+            while lines[j][:5]=="Seat ":
+                if lines[j].find("sitting out")==-1:
                     numPlayers += 1
-                i += 1
+                j += 1
             # add board
             board = []
             flopStart = hand.find("Dealing flop")
@@ -605,6 +633,7 @@ def readONGfile(filename):
             holeCards = {}
             roundInvestments = {}
             lenBoard = 0
+            lastNewRoundLine = -1
             
             # go through lines to populate seats
             n = 5
@@ -619,10 +648,11 @@ def readONGfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
                 startStacks[player] = toFloat(line[(line.find("(")+2):line.find(")")])
-                assert startStacks[player]!=0
+                assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
+                roundActionNum = 1
                 npl += 1
                 n += 1
             
@@ -638,7 +668,7 @@ def readONGfile(filename):
                     hc = hc.split(", ")
                     holeCards[maybePlayerName] = hc
             
-            for line in lines:
+            for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
                 # stop skipping once encounter "Stage" or "Game" or whatever
                 if line.find("History for hand")>=0:
@@ -654,12 +684,17 @@ def readONGfile(filename):
                         stage = src + "-" + line[24:(24 + line[24:].find("*") - 1)]
                         
                     elif line[:3]=="---" and len(line)>3:
+                        nar = j - lastNewRoundLine
+                        lastNewRoundLine = j
                         for key in roundInvestments:
                             roundInvestments[key] = 0
                         rdStart = line.find("Dealing")+8
                         rdEnd = rdStart + line[rdStart:].find("[") - 1
                         rd = line[rdStart:rdEnd].title().strip()
                         if rd!='Pocket Cards':
+                            if nar>1:
+                                assert roundActionNum!=1, "round with one action"
+                            roundActionNum = 1
                             cb = 0
                         if rd=='Flop':
                             lenBoard = 3
@@ -739,10 +774,11 @@ def readONGfile(filename):
                         else:
                             continue
                         if oldCB > (roundInvestments[maybePlayerName] - amt):
-                            assert a!='bet'
+                            assert a!='bet', "illegal action"
                         else:
-                            assert a!='call'
+                            assert a!='call', "illegal action"
                         newRow = {'GameNum':stage,
+                                  'RoundActionNum':roundActionNum,
                                   'SeatNum':seat,
                                   'Round':rd,
                                   'Player':maybePlayerName,
@@ -771,8 +807,14 @@ def readONGfile(filename):
                         for ii in range(1,lenBoard+1):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
+                        roundActionNum += 1
+            if data[-1]['RoundActionNum']==1:
+                data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
+            global errors
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
         
     return data
 
@@ -796,6 +838,7 @@ def readPSfile(filename):
     
     for i,hand in enumerate(fileContents):
         try:
+            assert not 'Hand cancelled' in hand, "cancelled hand"
             ###################### HAND INFORMATION ###########################
             # add small and big blinds
             fn = filename[filename.find("rawdata")+8:]
@@ -825,10 +868,10 @@ def readPSfile(filename):
             # add numPlayers
             lines = [s.rstrip() for s in hand.split('\n')]
             numPlayers = 0
-            i = 2
-            while lines[i][:5]=="Seat ":
+            j = 2
+            while lines[j][:5]=="Seat ":
                 numPlayers += 1
-                i += 1
+                j += 1
             # add board
             boardLine = lines[lines.index("*** SUMMARY ***") + 2]
             if boardLine[:5]=="Board":
@@ -848,6 +891,7 @@ def readPSfile(filename):
             holeCards = {}
             roundInvestments = {}
             lenBoard = 0
+            lastNewRoundLine = -1
             
             # go through lines to populate seats
             n = 2
@@ -862,10 +906,11 @@ def readPSfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
                 startStacks[player] = toFloat(line[(line.find("$")+1):line.find(" in chips")])
-                assert startStacks[player]!=0
+                assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
+                roundActionNum = 1
                 npl += 1
                 n += 1
             
@@ -880,7 +925,7 @@ def readPSfile(filename):
                     hc = hc.split()
                     holeCards[maybePlayerName] = hc
             
-            for line in lines:
+            for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
                 # stop skipping once encounter "Stage"
                 if line.find("PokerStars Game")>=0:
@@ -896,12 +941,17 @@ def readPSfile(filename):
                         stage = src + "-" + line[(line.find("#")+1):line.find(":")]
                                                 
                     elif line[:3]=="***":
+                        nar = j - lastNewRoundLine
+                        lastNewRoundLine = j
                         for key in roundInvestments:
                             roundInvestments[key] = 0
                         rdStart = line.find(" ")+1
                         rdEnd = rdStart + line[rdStart:].find("*") - 1
                         rd = line[rdStart:rdEnd].title().strip()
                         if rd!='Hole Cards':
+                            if nar>1:
+                                assert roundActionNum!=1, "round with one action"
+                            roundActionNum = 1
                             cb = 0
                         if rd=='Flop':
                             lenBoard = 3
@@ -985,10 +1035,11 @@ def readPSfile(filename):
                         else:
                             continue
                         if oldCB > (roundInvestments[maybePlayerName] - amt):
-                            assert a!='bet'
+                            assert a!='bet', "illegal action"
                         else:
-                            assert a!='call'
+                            assert a!='call', "illegal action"
                         newRow = {'GameNum':stage,
+                                  'RoundActionNum':roundActionNum,
                                   'SeatNum':seat,
                                   'Round':rd,
                                   'Player':maybePlayerName,
@@ -1017,8 +1068,14 @@ def readPSfile(filename):
                         for ii in range(1,lenBoard+1):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         data.append(newRow)
+                        roundActionNum += 1
+            if data[-1]['RoundActionNum']==1:
+                data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
+            global errors
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
         
     return data
 
@@ -1115,6 +1172,7 @@ def readPTYfile(filename):
             holeCards = {}
             roundInvestments = {}
             lenBoard = 0
+            lastNewRoundLine = -1
             
             # go through lines to populate seats
             n = 7
@@ -1129,10 +1187,12 @@ def readPTYfile(filename):
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
                 startStacks[player] = toFloat(line[(line.find("$")+1):(line.find("USD")-1)])
-                assert startStacks[player]!=0
+                if not hand.find(player+" has left table"):
+                    assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
+                roundActionNum = 1
                 npl += 1
                 n += 1
             
@@ -1147,7 +1207,7 @@ def readPTYfile(filename):
                     hc = hc.split(", ")
                     holeCards[maybePlayerName] = hc
             
-            for line in lines:
+            for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
                 # stop skipping once encounter "Game"
                 newRow = {}
@@ -1157,12 +1217,17 @@ def readPTYfile(filename):
                     stage = src + "-" + line[(line.find("#")+1):line.find(" starts")]
                     
                 elif line[:2]=="**" and line[:5]!="*****":
+                    nar = j - lastNewRoundLine
+                    lastNewRoundLine = j
                     for key in roundInvestments:
                         roundInvestments[key] = 0
                     rdStart = line.find(" ")+9
                     rdEnd = rdStart + line[rdStart:].find("*") - 1
                     rd = line[rdStart:rdEnd].title().strip()
                     if rd!='Down Cards':
+                        if nar>1:
+                            assert roundActionNum!=1, "round with one action"
+                        roundActionNum = 1
                         cb = 0
                     if rd=='Flop':
                         lenBoard = 3
@@ -1254,10 +1319,11 @@ def readPTYfile(filename):
                     else:
                         continue
                     if oldCB > (roundInvestments[maybePlayerName] - amt):
-                        assert a!='bet'
+                        assert a!='bet', "illegal action"
                     else:
-                        assert a!='call'
+                        assert a!='call', "illegal action"
                     newRow = {'GameNum':stage,
+                              'RoundActionNum':roundActionNum,
                               'SeatNum':seat,
                               'Round':rd,
                               'Player':maybePlayerName,
@@ -1286,8 +1352,14 @@ def readPTYfile(filename):
                     for ii in range(1,lenBoard+1):
                         newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                     data.append(newRow)
+                    roundActionNum += 1
+            if data[-1]['RoundActionNum']==1:
+                data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
+            global errors
+            errors.append(dict(
+                zip(('file','src','hand#','type','value','traceback'),
+                    [filename, src, i] + list(sys.exc_info()))))
         
     return data
 
@@ -1311,7 +1383,8 @@ folders = ["rawdata/"+fdr for fdr in os.listdir('rawdata')]
 allFiles = [folder+"/"+f for folder in folders for f in os.listdir(folder)
             if f.find('ipn ')==-1]
 
-keys = ['GameNum','Date','Time','SeatNum','Round','Player','StartStack',
+keys = ['GameNum','RoundActionNum',
+        'Date','Time','SeatNum','Round','Player','StartStack',
         'CurrentStack','Action','Amount','AllIn','CurrentBet','CurrentPot','InvestedThisRound',
         'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers',
         'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5']
