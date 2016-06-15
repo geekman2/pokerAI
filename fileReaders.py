@@ -275,10 +275,7 @@ def readABSfile(filename):
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
+            pass
     
     return data
                 
@@ -535,10 +532,7 @@ def readFTPfile(filename):
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
+            pass
             
     return data
 
@@ -811,10 +805,7 @@ def readONGfile(filename):
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
+            pass
         
     return data
 
@@ -1072,10 +1063,7 @@ def readPSfile(filename):
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
+            pass
         
     return data
 
@@ -1356,10 +1344,7 @@ def readPTYfile(filename):
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            global errors
-            errors.append(dict(
-                zip(('file','src','hand#','type','value','traceback'),
-                    [filename, src, i] + list(sys.exc_info()))))
+            pass
         
     return data
 

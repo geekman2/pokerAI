@@ -60,7 +60,7 @@ for ii,filename in enumerate(files):
     #Facing a bet
     pokerWOB['FacingBet'] = (pokerWOB.CurrentBet > featureSet.InvestedThisRound).astype(int)
     featureSet['FacingBet'] = pokerWOB.FacingBet
-    #NumPlayersLeft    
+    #NumPlayersLeft
     featureSet['NumPlayersLeftRatio'] = pokerWOB.NumPlayersLeft
     #NumPlayersLeft/NumPlayers ratio
     featureSet['NumPlayersLeftRatio'] = pokerWOB.NumPlayersLeft / pokerWOB.NumPlayers
