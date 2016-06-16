@@ -210,7 +210,7 @@ with open("features.csv") as f:
     # for all subsets
     generalFeatures = ['InvestedThisGame','InvestedThisRound','NumPlayersLeftRatio',
                        'NumAggActionsGame','NumAggActionsRound','NumPasActionsGame',
-                       'NumPasActionsRound','EffectiveStack','InPos','NumBets',
+                       'NumPasActionsRound','EffectiveStack','InPosition','NumBets',
                        'NumBetsRound','Button','PlayersLeftToAct', 'PrevAction',
                        'PotSize']
     
