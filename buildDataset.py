@@ -1,4 +1,5 @@
 import os
+import gc
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -22,7 +23,7 @@ startTime = datetime.now()
 for ii,filename in enumerate(files):
     poker = pd.read_csv(filename)
     print "READ IN POKER:", datetime.now() - startTime
-    # make seat number relative to dealer button
+    # make seat number relative to dealer button    
     poker['SeatRelDealer'] = np.where(poker.SeatNum > poker.Dealer,
                                         poker.SeatNum - poker.Dealer,
                                         poker.Dealer - poker.SeatNum)
@@ -90,41 +91,57 @@ for ii,filename in enumerate(files):
     featureSet['CallsSinceLastAgg'] = pokerWOB.groupby(['GameNum','Round','NumAggActionsRound']).call.cumsum()
     # get active players for each row
     relevantCols = ['GameNum','Round','Player','Action','CurrentStack']
-    apDF = zip(*[poker[c] for c in relevantCols])
-    APbyRow = []
-    m = len(apDF)
-    for i,(gameNum,rd,player,action,currentStack) in enumerate(apDF):
-        ap = []
+    esDF = zip(*[poker[c] for c in relevantCols])
+    ESbyRow = []
+    m = len(esDF)
+    for i,(gameNum,rd,player,action,currentStack) in enumerate(esDF):
+        es = []
         windowStart = i
         windowEnd = i
-        while windowStart>0 and apDF[windowStart][:2]==(gameNum,rd):
-            row = apDF[windowStart]
-            if row[2]!=player and row[3]!='fold':
-                ap.append(windowStart)
+        maxOtherStack = 0
+        while windowStart>=0 and esDF[windowStart][:2]==(gameNum,rd):
+            r = esDF[windowStart]
+            if r[2]!=player and r[4]>maxOtherStack and r[3]!='fold':
+                maxOtherStack = r[4]
             windowStart -= 1
-        while windowEnd<m and apDF[windowEnd][:2]==(gameNum,rd):
-            row = apDF[windowEnd]
-            if row[2]!=player:
-                ap.append(windowEnd)
+        while windowEnd<m and esDF[windowEnd][:2]==(gameNum,rd):
+            row = esDF[windowEnd]
+            if row[2]!=player and r[4]>maxOtherStack:
+                maxOtherStack = r[4]
             windowEnd += 1
-        APbyRow.append(ap)
-        
-    #EffectiveStack
-    stacks = list(poker.CurrentStack)
-    maxOtherStacks = [max(stacks[p] for p in ap) for ap in APbyRow]
-    featureSet['EffectiveStack'] = [min(l) 
-                                for i,l in enumerate(zip(stacks,maxOtherStacks))
-                                if i in pokerWOB.index]    
+        ESbyRow.append(es)
+    featureSet['EffectiveStack'] = [ESbyRow[i] for i in pokerWOB.index]
+    del ESbyRow
+    gc.collect()
     #EffectiveStackVSAggressor
     featureSet['ESvsAgg'] = (pokerWOB.AggStack>=pokerWOB.CurrentStack)*pokerWOB.AggStack + \
                             (pokerWOB.CurrentStack>=pokerWOB.AggStack)*pokerWOB.CurrentStack
     #HighestCardOnBoard
     featureSet['HighestCardOnBoard'] = cardsRank.max(axis=1, skipna=True).fillna(0)
     #InPositionVSActivePlayers
-    seats = list(poker.SeatRelDealer)
-    minOtherSeats = [min(seats[p] for p in ap) for ap in APbyRow]
-    featureSet['InPosVsAP'] = [s<m for i,(s,m) in enumerate(zip(seats, minOtherSeats))
-                                if i in pokerWOB.index]
+    relevantCols = ['GameNum','Round','Player','Action','SeatRelDealer']
+    ipDF = zip(*[poker[c] for c in relevantCols])
+    IPbyRow = []
+    m = len(ipDF)
+    for i,(gameNum,rd,player,action,seat) in enumerate(ipDF):
+        ip = []
+        windowStart = i
+        windowEnd = i
+        minOtherSeat = 20
+        while windowStart>=0 and esDF[windowStart][:2]==(gameNum,rd):
+            r = ipDF[windowStart]
+            if r[2]!=player and r[4]<minOtherSeat and r[3]!='fold':
+                minOtherSeat = r[4]
+            windowStart -= 1
+        while windowEnd<m and esDF[windowEnd][:2]==(gameNum,rd):
+            row = esDF[windowEnd]
+            if row[2]!=player and r[4]<minOtherSeat:
+                minOtherSeat = r[4]
+            windowEnd += 1
+        IPbyRow.append(ip)
+    featureSet['InPosition'] = [IPbyRow[i] for i in pokerWOB.index]
+    del IPbyRow
+    gc.collect()
     #InPositionVSAggressor
     featureSet['InPosVsAgg'] = (pokerWOB.AggPos > pokerWOB.SeatRelDealer).astype(int)
     #MaxCardsSameSuit
@@ -162,6 +179,8 @@ for ii,filename in enumerate(files):
         if isAgg:
             n = numPlayersLeft - 1
     featureSet['PlayersLeftToAct'] = [npla[i] for i in pokerWOB.index]
+    del npla
+    gc.collect()
     #PotOdds
     featureSet['PotOdds'] = pokerWOB.CurrentPot / featureSet.AmtToCall
     #PotSize
@@ -188,14 +207,18 @@ with open("features.csv") as f:
     # feature sets for different files
     target = ['Action']
     
-    boardFeatures = ['AvgBoardCardRank','RngBoardCardRank','HighestCardOnBoard',
-                     'MaxCardsSameSuit','MaxCardsSameRank','NumFaceCards']
-    
+    # for all subsets
     generalFeatures = ['InvestedThisGame','InvestedThisRound','NumPlayersLeftRatio',
                        'NumAggActionsGame','NumAggActionsRound','NumPasActionsGame',
-                       'NumPasActionsRound','EffectiveStack','NumBets','NumBetsRound',
-                       'Button','PlayersLeftToAct', 'PrevAction','PotSize']
+                       'NumPasActionsRound','EffectiveStack','InPos','NumBets',
+                       'NumBetsRound','Button','PlayersLeftToAct', 'PrevAction',
+                       'PotSize']
+    
+    # Cards on the board or not?
+    boardFeatures = ['AvgBoardCardRank','RngBoardCardRank','HighestCardOnBoard',
+                     'MaxCardsSameSuit','MaxCardsSameRank','NumFaceCards']
                    
+    # Facing bet or not?
     FBFeatures = ['AmtToCall','AllInIfCall','CallsSinceLastAgg','ESvsAgg',
                   'InPosVsAgg','PotOdds','NumFoldsPrev','NumCallsPrev','NumRaisesPrev']
     nonFBFeatures = ['NumChecksPrev','NumBetsPrev']

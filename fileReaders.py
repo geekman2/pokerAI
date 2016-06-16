@@ -17,12 +17,12 @@ cardSuitRange = ['d','c','h','s']
 deckT = [str(i) + str(j) for i in cardNumRangeT for j in cardSuitRange]
 deck10 = [str(i) + str(j) for i in cardNumRange10 for j in cardSuitRange]
 
-errors = []
-
 def toFloat(s):
     if len(s)>=3 and s[-3]==',':
         s[-3] = '.'
     return locale.atof(s)
+
+errors = []
 
 def readABSfile(filename):
     # HANDS INFORMATION
@@ -117,9 +117,11 @@ def readABSfile(filename):
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
             
-            # go through again to collect hole card info
+            # go through again to collect hole card info (also check for bad names)
             for j,line in enumerate(lines):
                 maybePlayerName = line[:line.find(" ")]
+                if len(maybePlayerName)==22:
+                    assert maybePlayerName in seats.keys()
                 if maybePlayerName in seats.keys() and line.find("Shows")>=0:
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
@@ -174,7 +176,8 @@ def readABSfile(filename):
                         if fullA.find("Posts")>=0:
                             if fullA.find('dead')>=0:
                                 a = 'deadblind'
-                                amt = toFloat(fullA[fullA.find("$")+1:])
+                                amt = fullA[fullA.find("$")+1:]
+                                amt = toFloat(amt[:amt.find(" ")])
                             else:
                                 a = 'blind'
                                 amt = toFloat(fullA[fullA.find("$")+1:])
@@ -262,19 +265,23 @@ def readABSfile(filename):
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
-                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt
+                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
+                                  'Filename':filename
                                   }
-                        for ii in [1,2]:
-                            c = holeCards[maybePlayerName][ii-1]
-                            if c is not None:
-                                newRow['HoleCard'+str(ii)] = deck10.index(c)
-                        for ii in range(1,lenBoard+1):
-                            newRow["Board"+str(ii)] = deck10.index(board[ii-1])
+                        try:
+                            for ii in [1,2]:
+                                c = holeCards[maybePlayerName][ii-1]
+                                if c is not None:
+                                    newRow['HoleCard'+str(ii)] = deck10.index(c)
+                            for ii in range(1,lenBoard+1):
+                                newRow["Board"+str(ii)] = deck10.index(board[ii-1])
+                        except ValueError:
+                            pass
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
                 data.pop()
-        except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
+        except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError) as e:
             pass
     
     return data
@@ -289,7 +296,7 @@ def readFTPfile(filename):
     with codecs.open(filename, encoding='utf-8') as f:
         startString = "Full Tilt Poker Game #"
         fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
-        fileContents = fileContents[1:]        
+        fileContents = fileContents[1:]
     
     data = []
     lineToRead = True
@@ -379,6 +386,8 @@ def readFTPfile(filename):
             # go through again to collect hole card info
             for line in lines:
                 maybePlayerName = line[:line.find(" ")]
+                if len(maybePlayerName)==22 and not line.find("sits down")>=0:
+                    assert maybePlayerName in seats.keys(), hand
                 if maybePlayerName in seats.keys() and line.find("shows [")>=0:
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
@@ -519,21 +528,25 @@ def readFTPfile(filename):
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
-                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt
+                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
+                                  'Filename':filename
                                   }
-                        for ii in [1,2]:
-                            c = holeCards[maybePlayerName][ii-1]
-                            if c is not None:
-                                newRow['HoleCard'+str(ii)] = deckT.index(c)
-                        for ii in range(1,lenBoard+1):
-                            newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        try:
+                            for ii in [1,2]:
+                                c = holeCards[maybePlayerName][ii-1]
+                                if c is not None:
+                                    newRow['HoleCard'+str(ii)] = deckT.index(c)
+                            for ii in range(1,lenBoard+1):
+                                newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        except ValueError:
+                            pass
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
-            
+            pass            
+        
     return data
 
 ###############################################################################
@@ -661,6 +674,11 @@ def readONGfile(filename):
                     hc = line[(line.find("[")+1):-1]
                     hc = hc.split(", ")
                     holeCards[maybePlayerName] = hc
+            
+            for line in lines:
+                maybePlayerName = line[(line.find(":")+2):(line.find("(")-1)]
+                if len(maybePlayerName)==22:
+                    assert maybePlayerName in seats.keys()
             
             for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
@@ -792,14 +810,18 @@ def readONGfile(filename):
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
-                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt
+                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
+                                  'Filename':filename
                                   }
-                        for ii in [1,2]:
-                            c = holeCards[maybePlayerName][ii-1]
-                            if c is not None:
-                                newRow['HoleCard'+str(ii)] = deckT.index(c)
-                        for ii in range(1,lenBoard+1):
-                            newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        try:
+                            for ii in [1,2]:
+                                c = holeCards[maybePlayerName][ii-1]
+                                if c is not None:
+                                    newRow['HoleCard'+str(ii)] = deckT.index(c)
+                            for ii in range(1,lenBoard+1):
+                                newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        except ValueError:
+                            pass
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -911,6 +933,8 @@ def readPSfile(filename):
             # go through again to collect hole card info
             for line in lines:
                 maybePlayerName = line[:line.find(":")]
+                if len(maybePlayerName)==22 and not line.find('joins the')>=0:
+                    assert maybePlayerName in seats.keys()
                 if maybePlayerName in seats.keys() and line.find("shows")>=0:
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
@@ -1050,14 +1074,18 @@ def readPSfile(filename):
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
-                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt
+                                  'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
+                                  'Filename':filename
                                   }
-                        for ii in [1,2]:
-                            c = holeCards[maybePlayerName][ii-1]
-                            if c is not None:
-                                newRow['HoleCard'+str(ii)] = deckT.index(c)
-                        for ii in range(1,lenBoard+1):
-                            newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        try:
+                            for ii in [1,2]:
+                                c = holeCards[maybePlayerName][ii-1]
+                                if c is not None:
+                                    newRow['HoleCard'+str(ii)] = deckT.index(c)
+                            for ii in range(1,lenBoard+1):
+                                newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        except ValueError:
+                            pass
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -1190,6 +1218,9 @@ def readPTYfile(filename):
             # go through again to collect hole card info
             for line in lines:
                 maybePlayerName = line[:line.find(" ")]
+                assert line!="** Dealing **"
+                if len(maybePlayerName)==22 and not line.find('has joined')>=0:
+                    assert maybePlayerName in seats.keys()
                 if maybePlayerName in seats.keys() and line.find("shows")>=0:
                     hc = line[(line.find("[")+2):(line.find("]")-1)]
                     hc = hc.split(", ")
@@ -1226,7 +1257,7 @@ def readPTYfile(filename):
                     elif rd.find("Card")>=0:
                         rd = 'Preflop'
                     else:
-                        raise ValueError
+                        raise ValueError                    
                 
                 # create new row IF row is an action (starts with encrypted player name)
                 elif maybePlayerName in seats.keys():
@@ -1321,6 +1352,7 @@ def readPTYfile(filename):
                               'Amount':amt,
                               'AllIn':isAllIn,
                               'CurrentBet':oldCB,
+
                               'CurrentPot':cp-amt,
                               'NumPlayersLeft':npl+1 if a=='fold' else npl,
                               'Date': dateObj,
@@ -1331,14 +1363,18 @@ def readPTYfile(filename):
                               'Dealer': dealer,
                               'NumPlayers': numPlayers,
                               'LenBoard': lenBoard,
-                              'InvestedThisRound': roundInvestments[maybePlayerName] - amt
+                              'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
+                              'Filename':filename
                              }
-                    for ii in [1,2]:
-                        c = holeCards[maybePlayerName][ii-1]
-                        if c is not None:
-                            newRow['HoleCard'+str(ii)] = deckT.index(c)
-                    for ii in range(1,lenBoard+1):
-                        newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                    try:
+                        for ii in [1,2]:
+                            c = holeCards[maybePlayerName][ii-1]
+                            if c is not None:
+                                newRow['HoleCard'+str(ii)] = deckT.index(c)
+                        for ii in range(1,lenBoard+1):
+                            newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                    except ValueError:
+                        pass
                     data.append(newRow)
                     roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -1372,7 +1408,8 @@ keys = ['GameNum','RoundActionNum',
         'Date','Time','SeatNum','Round','Player','StartStack',
         'CurrentStack','Action','Amount','AllIn','CurrentBet','CurrentPot','InvestedThisRound',
         'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers',
-        'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5']
+        'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5',
+        'Filename']
 
 totalRows = 0
 
@@ -1382,7 +1419,6 @@ def chunks(l,n):
 
 def readAllFiles(files,n):
     global totalRows
-    startTime = datetime.datetime.now()
     for ii,chunk in enumerate(chunks(files, n)):
         dataWriteTo = "data/poker{}.csv".format(ii)
         with open(dataWriteTo, 'ab') as outputFile:
@@ -1392,12 +1428,8 @@ def readAllFiles(files,n):
                 df = readFile(f)
                 dictWriter.writerows(df)
                 totalRows += len(df)
-        print "Total rows:", totalRows
-        print "Current runtime:", datetime.datetime.now() - startTime
-    print datetime.datetime.now() - startTime
 
 def worker(tup):
-    global totalRows
     ii,chunk = tup
     dataWriteTo = "data/poker{}.csv".format(ii)
     with open(dataWriteTo, 'ab') as outputFile:
@@ -1406,16 +1438,27 @@ def worker(tup):
         for f in chunk:
             df = readFile(f)
             dictWriter.writerows(df)
-            totalRows += len(df)
+
+import itertools
+import random
+srcs = ['abs','ftp','ong','ps','pty']
+stks = ['0.5','0.25','1','2','4','6','10']
+examples = []
+for sr,st in itertools.product(srcs,stks):
+    allMatches = [f for f in allFiles if f.find("/"+sr)>=0 and f.find("/"+st+"/")>=0]
+    if allMatches:
+        #examples += random.sample(allMatches,8)
+        examples.append(random.choice(allMatches))
 
 def main():
     startTime = datetime.datetime.now()
     p = multiprocessing.Pool(8)
-    p.map_async(worker,enumerate(chunks(allFiles, 100)))
+    p.map_async(worker,enumerate(chunks(examples, 5)))
     p.close()
     p.join()
-    print "Total rows:", totalRows
     print "Current runtime:", datetime.datetime.now() - startTime
 
-if __name__ == "__main__":
-    main()
+#if __name__ == "__main__":
+    #main()
+
+readAllFiles(allFiles[:100], 100)                                                                                                                
