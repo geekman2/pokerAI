@@ -1433,7 +1433,6 @@ def worker(tup):
     ii,chunk = tup
     dataWriteTo = "data/poker{}.csv".format(ii)
     with open(dataWriteTo, 'ab') as outputFile:
-        outputFile.write(','.join(keys) + "\n")
         dictWriter = csv.DictWriter(outputFile, keys)
         for f in chunk:
             df = readFile(f)
@@ -1453,12 +1452,16 @@ for sr,st in itertools.product(srcs,stks):
 def main():
     startTime = datetime.datetime.now()
     p = multiprocessing.Pool(8)
-    p.map_async(worker,enumerate(chunks(examples, 5)))
+    p.map_async(worker,enumerate(chunks(allFiles, 100)))
     p.close()
     p.join()
     print "Current runtime:", datetime.datetime.now() - startTime
 
-#if __name__ == "__main__":
-    #main()
+# write headers first
+for i in range(len(allFiles)/100 + 1):
+    with open("data/poker{}.csv".format(i),'w') as outputFile:
+        outputFile.write(",".join(keys) + "\n")
 
-readAllFiles(allFiles[:100], 100)                                                                                                                
+# write data
+if __name__ == "__main__":
+    main()
