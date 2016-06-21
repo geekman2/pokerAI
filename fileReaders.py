@@ -1439,6 +1439,11 @@ folders = ["rawdata/"+fdr for fdr in os.listdir('rawdata')]
 allFiles = [folder+"/"+f for folder in folders for f in os.listdir(folder)
             if f.find('ipn ')==-1]
 
+# create directories "tables" and "columns" for separate data
+for f in ['tables','columns']:
+    if not os.path.exists('data/'+f):
+        os.mkdir('data/'+f)
+
 def chunks(l,n):
     for i in range(0, len(l), n):
         yield l[i:i+n]
@@ -1448,7 +1453,7 @@ def readAllFiles(files, n):
     
     # write headers to CSVs
     for i in xrange(len(files)/n + 1):
-        with open("data/poker{}.csv".format(i),'w') as outputFile:
+        with open("data/tables/poker{}.csv".format(i),'w') as outputFile:
             outputFile.write(",".join(keys) + "\n")
     
     for f in files:
@@ -1457,12 +1462,12 @@ def readAllFiles(files, n):
         
         # write columns to text files
         for col in dfD:
-            writeTo = "data/{}.txt".format(col)
+            writeTo = "data/columns/{}.txt".format(col)
             with open(writeTo, 'ab') as outputFile:
                 outputFile.write(' '.join([str(c) for c in dfD[col]]))
                 
         # write data to CSVs
-        dataWriteTo = "data/poker{}.csv".format(i/n)
+        dataWriteTo = "data/tables/poker{}.csv".format(i/n)
         with open(dataWriteTo,'ab') as outputFile:
             dictWriter = csv.DictWriter(outputFile, keys)
             dictWriter.writerows(dfL)
@@ -1500,7 +1505,7 @@ def getData(nFiles):
         nWrites += 1
         
     for i in xrange(nWrites):
-        with open("data/poker{}.csv".format(i),'w') as outputFile:
+        with open("data/tables/poker{}.csv".format(i),'w') as outputFile:
             outputFile.write(",".join(keys) + "\n")
     
     # multi-threaded CSV and txt writing
@@ -1511,4 +1516,4 @@ def getData(nFiles):
     
     print "Current runtime:", datetime.datetime.now() - startTime
     
-getData(len(allFiles))
+getData(25)
