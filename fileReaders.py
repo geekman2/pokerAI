@@ -1469,4 +1469,46 @@ def readAllFiles(files, n):
     
     print datetime.datetime.now() - startTime
 
-readAllFiles(allFiles[:25], 10)
+chunkSize = 10
+
+# multi-threaded
+def worker(tup):
+    i,f = tup
+    
+    # read in data both ways
+    dfL = readFileToList(f)
+    dfD = listToDict(dfL)
+    
+    # write columns to text files
+    for col in dfD:
+        writeTo = "data/columns/{}.txt".format(col)
+        with open(writeTo, 'ab') as outputFile:
+            outputFile.write(' '.join([str(c) for c in dfD[col]]))
+            
+    # write list to CSV
+    dataWriteTo = "data/tables/poker{}.csv".format(i/chunkSize)
+    with open(dataWriteTo,'ab') as outputFile:
+        dictWriter = csv.DictWriter(outputFile, keys)
+        dictWriter.writerows(dfL)
+        
+def getData(nFiles):
+    startTime = datetime.datetime.now()
+    
+    # write headers to CSVs
+    nWrites = nFiles/chunkSize
+    if nFiles%chunkSize!=0:
+        nWrites += 1
+        
+    for i in xrange(nWrites):
+        with open("data/poker{}.csv".format(i),'w') as outputFile:
+            outputFile.write(",".join(keys) + "\n")
+    
+    # multi-threaded CSV and txt writing
+    p = multiprocessing.Pool(8)
+    p.map_async(worker,enumerate(allFiles[:nFiles]))
+    p.close()
+    p.join()
+    
+    print "Current runtime:", datetime.datetime.now() - startTime
+    
+getData(len(allFiles))
