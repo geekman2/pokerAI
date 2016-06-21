@@ -22,7 +22,7 @@ def toFloat(s):
         s[-3] = '.'
     return locale.atof(s)
 
-errors = []
+nplGnp = []
 
 def readABSfile(filename):
     # HANDS INFORMATION
@@ -293,6 +293,8 @@ def readABSfile(filename):
 ###############################################################################
 
 def readFTPfile(filename):
+    global nplGnp
+    
     with codecs.open(filename, encoding='utf-8') as f:
         startString = "Full Tilt Poker Game #"
         fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
@@ -378,7 +380,8 @@ def readFTPfile(filename):
                 roundInvestments[player] = 0
                 roundActionNum = 1
                 n += 1
-                npl += 1
+                if line.find('sitting out')==-1:
+                    npl += 1
                       
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
@@ -540,6 +543,14 @@ def readFTPfile(filename):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         except ValueError:
                             pass
+                        if newRow['NumPlayersLeft']>newRow['NumPlayers']:
+                            nplGnp.append({'file':filename,
+                                           'source':src,
+                                           'gamenum':stage,
+                                           'round':rd,
+                                           'roundActionNum':roundActionNum,
+                                           'npl':newRow['NumPlayersLeft'],
+                                           'np':numPlayers})
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -905,6 +916,7 @@ def readPSfile(filename):
             roundInvestments = {}
             lenBoard = 0
             lastNewRoundLine = -1
+            sitting = []
             
             # go through lines to populate seats
             n = 2
@@ -933,8 +945,11 @@ def readPSfile(filename):
             # go through again to collect hole card info
             for line in lines:
                 maybePlayerName = line[:line.find(":")]
-                if len(maybePlayerName)==22 and not line.find('joins the')>=0:
-                    assert maybePlayerName in seats.keys()
+                if line.find('sit')>=0:
+                    sitting.append(maybePlayerName)
+                if len(maybePlayerName)==22 and maybePlayerName[:5]!="Total":
+                    assert maybePlayerName in seats.keys() + sitting or \
+                            maybePlayerName.find("***")>=0, maybePlayerName
                 if maybePlayerName in seats.keys() and line.find("shows")>=0:
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
@@ -1086,6 +1101,14 @@ def readPSfile(filename):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         except ValueError:
                             pass
+                        if newRow['NumPlayersLeft']>newRow['NumPlayers']:
+                            nplGnp.append({'file':filename,
+                                           'source':src,
+                                           'gamenum':stage,
+                                           'round':rd,
+                                           'roundActionNum':roundActionNum,
+                                           'npl':newRow['NumPlayersLeft'],
+                                           'np':numPlayers})
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -1132,7 +1155,7 @@ def readPTYfile(filename):
             dateEnd = dateStart + hand[dateStart:].find(",")
             month, dateNum = hand[dateStart:dateEnd].split()
             monthConv = {v:k for k,v in enumerate(calendar.month_name)}
-            year = hand[(hand.find("Table") - 6):(hand.find("Table") - 2)]
+            year = hand[(hand.find("Table") - 6):(hand.find("Table") - 1)]
             dateObj = datetime.date(int(year),
                                     int(monthConv[month]),
                                     int(dateNum))
@@ -1352,7 +1375,6 @@ def readPTYfile(filename):
                               'Amount':amt,
                               'AllIn':isAllIn,
                               'CurrentBet':oldCB,
-
                               'CurrentPot':cp-amt,
                               'NumPlayersLeft':npl+1 if a=='fold' else npl,
                               'Date': dateObj,
@@ -1385,8 +1407,14 @@ def readPTYfile(filename):
     return data
 
 ######################## READ ONE FILE ########################################
+keys = ['GameNum','RoundActionNum',
+        'Date','Time','SeatNum','Round','Player','StartStack',
+        'CurrentStack','Action','Amount','AllIn','CurrentBet','CurrentPot','InvestedThisRound',
+        'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers',
+        'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5',
+        'Filename']
     
-def readFile(filename):
+def readFileToList(filename):
     # get dataframe from one of the source-specific functions
     bf = filename[::-1]
     src = bf[(bf.find("HLN")+3):bf.find("/")][::-1].strip()
@@ -1396,72 +1424,49 @@ def readFile(filename):
     
     func = "read" + src.upper() + "file"
     full = eval(func+"('"+filename+"')")
-        
+    
     return full
+    
+def listToDict(df):    
+    d = {}
+    for k in keys:
+        d[k] = [row[k] if k in row.keys() else '' for row in df]
+    return d
+    
         
 ####################### READ ALL FILES ########################################
 folders = ["rawdata/"+fdr for fdr in os.listdir('rawdata')]
 allFiles = [folder+"/"+f for folder in folders for f in os.listdir(folder)
             if f.find('ipn ')==-1]
 
-keys = ['GameNum','RoundActionNum',
-        'Date','Time','SeatNum','Round','Player','StartStack',
-        'CurrentStack','Action','Amount','AllIn','CurrentBet','CurrentPot','InvestedThisRound',
-        'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers',
-        'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5',
-        'Filename']
-
-totalRows = 0
-
 def chunks(l,n):
     for i in range(0, len(l), n):
         yield l[i:i+n]
 
-def readAllFiles(files,n):
-    global totalRows
-    for ii,chunk in enumerate(chunks(files, n)):
-        dataWriteTo = "data/poker{}.csv".format(ii)
-        with open(dataWriteTo, 'ab') as outputFile:
-            outputFile.write(','.join(keys) + "\n")
-            dictWriter = csv.DictWriter(outputFile, keys)
-            for f in chunk:
-                df = readFile(f)
-                dictWriter.writerows(df)
-                totalRows += len(df)
-
-def worker(tup):
-    ii,chunk = tup
-    dataWriteTo = "data/poker{}.csv".format(ii)
-    with open(dataWriteTo, 'ab') as outputFile:
-        dictWriter = csv.DictWriter(outputFile, keys)
-        for f in chunk:
-            df = readFile(f)
-            dictWriter.writerows(df)
-
-import itertools
-import random
-srcs = ['abs','ftp','ong','ps','pty']
-stks = ['0.5','0.25','1','2','4','6','10']
-examples = []
-for sr,st in itertools.product(srcs,stks):
-    allMatches = [f for f in allFiles if f.find("/"+sr)>=0 and f.find("/"+st+"/")>=0]
-    if allMatches:
-        #examples += random.sample(allMatches,8)
-        examples.append(random.choice(allMatches))
-
-def main():
+def readAllFiles(files, n):
     startTime = datetime.datetime.now()
-    p = multiprocessing.Pool(8)
-    p.map_async(worker,enumerate(chunks(allFiles, 100)))
-    p.close()
-    p.join()
-    print "Current runtime:", datetime.datetime.now() - startTime
+    
+    # write headers to CSVs
+    for i in xrange(len(files)/n + 1):
+        with open("data/poker{}.csv".format(i),'w') as outputFile:
+            outputFile.write(",".join(keys) + "\n")
+    
+    for f in files:
+        dfL = readFileToList(f)
+        dfD = listToDict(dfL)
+        
+        # write columns to text files
+        for col in dfD:
+            writeTo = "data/{}.txt".format(col)
+            with open(writeTo, 'ab') as outputFile:
+                outputFile.write(' '.join([str(c) for c in dfD[col]]))
+                
+        # write data to CSVs
+        dataWriteTo = "data/poker{}.csv".format(i/n)
+        with open(dataWriteTo,'ab') as outputFile:
+            dictWriter = csv.DictWriter(outputFile, keys)
+            dictWriter.writerows(dfL)
+    
+    print datetime.datetime.now() - startTime
 
-# write headers first
-for i in range(len(allFiles)/100 + 1):
-    with open("data/poker{}.csv".format(i),'w') as outputFile:
-        outputFile.write(",".join(keys) + "\n")
-
-# write data
-if __name__ == "__main__":
-    main()
+readAllFiles(allFiles[:25], 10)
