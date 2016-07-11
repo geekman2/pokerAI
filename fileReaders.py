@@ -16,13 +16,12 @@ cardNumRange10 = [str(i) for i in range(2,11)] + ['J','Q','K','A']
 cardSuitRange = ['d','c','h','s']
 deckT = [str(i) + str(j) for i in cardNumRangeT for j in cardSuitRange]
 deck10 = [str(i) + str(j) for i in cardNumRange10 for j in cardSuitRange]
+actions = ['blind','deadblind','fold','check','call','bet','raise']
 
 def toFloat(s):
     if len(s)>=3 and s[-3]==',':
         s[-3] = '.'
     return locale.atof(s)
-
-nplGnp = []
 
 def readABSfile(filename):
     # HANDS INFORMATION
@@ -92,6 +91,7 @@ def readABSfile(filename):
             lenBoard = 0
             isAllIn = False
             lastNewRoundLine = -1
+            winnings = {}
             
             # go through lines to populate seats
             n = 2
@@ -102,6 +102,7 @@ def readABSfile(filename):
                 playerStart = line.find("-")+2
                 playerEnd = playerStart + line[playerStart:].find(' ')
                 player = line[playerStart:playerEnd]
+                assert not '$' in player and not ')' in player, "bad player name"
                 seats[player] = seatnum
                 seatnum += 1
                 seatnums.append(int(line[5:(line.find("-")-1)].strip()))
@@ -109,6 +110,7 @@ def readABSfile(filename):
                 assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
+                winnings[player] = 0.
                 roundInvestments[player] = 0
                 roundActionNum = 1
                 npl += 1
@@ -117,7 +119,8 @@ def readABSfile(filename):
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
             
-            # go through again to collect hole card info (also check for bad names)
+            # go through again to...
+            # collect hole card info, check for bad names, find winner
             for j,line in enumerate(lines):
                 maybePlayerName = line[:line.find(" ")]
                 if len(maybePlayerName)==22:
@@ -126,6 +129,10 @@ def readABSfile(filename):
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
                     holeCards[maybePlayerName] = hc
+                elif 'Collects' in line:
+                    amt = line[(line.find('$')+1):]
+                    amt = float(amt[:amt.find(' ')])
+                    winnings[maybePlayerName] += amt
             
             for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
@@ -253,7 +260,7 @@ def readABSfile(filename):
                                   'CurrentStack':stacks[maybePlayerName] + amt,
                                   'Action':a,
                                   'Amount':amt,
-                                  'AllIn':isAllIn,
+                                  'AllIn':int(isAllIn),
                                   'CurrentBet':oldCB,
                                   'CurrentPot':cp-amt,
                                   'NumPlayersLeft':npl+1 if a=='fold' else npl,
@@ -266,13 +273,15 @@ def readABSfile(filename):
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
-                                  'Filename':filename
+                                  'Winnings': winnings[maybePlayerName]
                                   }
                         try:
                             for ii in [1,2]:
                                 c = holeCards[maybePlayerName][ii-1]
-                                if c is not None:
-                                    newRow['HoleCard'+str(ii)] = deck10.index(c)
+                                if c is None:
+                                    newRow['HoleCard'+str(ii)] = -1
+                                else:
+                                    newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deck10.index(board[ii-1])
                         except ValueError:
@@ -292,9 +301,7 @@ def readABSfile(filename):
 ###############################################################################
 ###############################################################################
 
-def readFTPfile(filename):
-    global nplGnp
-    
+def readFTPfile(filename):    
     with codecs.open(filename, encoding='utf-8') as f:
         startString = "Full Tilt Poker Game #"
         fileContents = [startString + theRest for theRest in f.read().replace('\r','').split(startString)]
@@ -360,6 +367,7 @@ def readFTPfile(filename):
             holeCards = {}
             roundInvestments = {}
             lenBoard = 0
+            winnings = {}
             
             # go through lines to populate seats
             n = 1
@@ -370,6 +378,7 @@ def readFTPfile(filename):
                 playerStart = line.find(":")+2
                 playerEnd = playerStart + line[playerStart:].find(' ')
                 player = line[playerStart:playerEnd]
+                assert not '$' in player and not ')' in player, "bad player name"
                 seats[player] = seatnum
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
@@ -377,6 +386,7 @@ def readFTPfile(filename):
                 assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
+                winnings[player] = 0.
                 roundInvestments[player] = 0
                 roundActionNum = 1
                 n += 1
@@ -386,7 +396,8 @@ def readFTPfile(filename):
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
 
-            # go through again to collect hole card info
+            # go through again to...
+            # collect hole card info, check for bad names, find winner
             for line in lines:
                 maybePlayerName = line[:line.find(" ")]
                 if len(maybePlayerName)==22 and not line.find("sits down")>=0:
@@ -395,7 +406,11 @@ def readFTPfile(filename):
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
                     holeCards[maybePlayerName] = hc
-            
+                elif 'wins' in line:
+                    amt = line[(line.find('$')+1):]
+                    amt = float(amt[:amt.find(')')])
+                    winnings[maybePlayerName] += amt
+                
             for line in lines:
                 # skip SUMMARY section by changing lineToRead when encounter it
                 # stop skipping once encounter "Stage" or "Game" or whatever
@@ -532,25 +547,19 @@ def readFTPfile(filename):
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
-                                  'Filename':filename
+                                  'Winnings': winnings[maybePlayerName]
                                   }
                         try:
                             for ii in [1,2]:
                                 c = holeCards[maybePlayerName][ii-1]
-                                if c is not None:
+                                if c is None:
+                                    newRow['HoleCard'+str(ii)] = -1
+                                else:
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         except ValueError:
                             pass
-                        if newRow['NumPlayersLeft']>newRow['NumPlayers']:
-                            nplGnp.append({'file':filename,
-                                           'source':src,
-                                           'gamenum':stage,
-                                           'round':rd,
-                                           'roundActionNum':roundActionNum,
-                                           'npl':newRow['NumPlayersLeft'],
-                                           'np':numPlayers})
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -652,6 +661,7 @@ def readONGfile(filename):
             roundInvestments = {}
             lenBoard = 0
             lastNewRoundLine = -1
+            winnings = {}
             
             # go through lines to populate seats
             n = 5
@@ -662,6 +672,7 @@ def readONGfile(filename):
                 playerStart = line.find(":")+2
                 playerEnd = playerStart + line[playerStart:].find(' ')
                 player = line[playerStart:playerEnd]
+                assert not '$' in player and not ')' in player, "bad player name"
                 seats[player] = seatnum
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
@@ -669,6 +680,7 @@ def readONGfile(filename):
                 assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
+                winnings[player] = 0.
                 roundInvestments[player] = 0
                 roundActionNum = 1
                 npl += 1
@@ -677,7 +689,20 @@ def readONGfile(filename):
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
 
-            # go through again to collect hole card info
+            # go through again to...
+            # collect hole card info, check for bad names, find winner
+            for line in lines:
+                maybePlayerName = line[(line.find(":")+2):(line.find("(")-1)]
+                if maybePlayerName in seats.keys() and line.find(", [")>=0:
+                    hc = line[(line.find("[")+1):-1]
+                    hc = hc.split(", ")
+                    holeCards[maybePlayerName] = hc
+                elif 'won by' in line:
+                    amt = line[(line.find('($')+2):]
+                    amt = float(amt[:amt.find(')')])
+                    player = line[(line.find('won by')+7):]
+                    winnings[maybePlayerName] += amt
+
             cardLines = [l for l in lines if l.find(", [")>=0]
             for line in cardLines:
                 maybePlayerName = line[(line.find(":")+2):(line.find("(")-1)]
@@ -685,7 +710,7 @@ def readONGfile(filename):
                     hc = line[(line.find("[")+1):-1]
                     hc = hc.split(", ")
                     holeCards[maybePlayerName] = hc
-            
+                
             for line in lines:
                 maybePlayerName = line[(line.find(":")+2):(line.find("(")-1)]
                 if len(maybePlayerName)==22:
@@ -822,12 +847,14 @@ def readONGfile(filename):
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
-                                  'Filename':filename
+                                  'Winnings': winnings[maybePlayerName]
                                   }
                         try:
                             for ii in [1,2]:
                                 c = holeCards[maybePlayerName][ii-1]
-                                if c is not None:
+                                if c is None:
+                                    newRow['HoleCard'+str(ii)] = -1
+                                else:
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
@@ -917,6 +944,7 @@ def readPSfile(filename):
             lenBoard = 0
             lastNewRoundLine = -1
             sitting = []
+            winnings = {}
             
             # go through lines to populate seats
             n = 2
@@ -927,6 +955,7 @@ def readPSfile(filename):
                 playerStart = line.find(":")+2
                 playerEnd = playerStart + line[playerStart:].find('(') - 1
                 player = line[playerStart:playerEnd]
+                assert not '$' in player and not ')' in player, "bad player name"
                 seats[player] = seatnum
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
@@ -935,6 +964,7 @@ def readPSfile(filename):
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
                 roundInvestments[player] = 0
+                winnings[player] = 0.
                 roundActionNum = 1
                 npl += 1
                 n += 1
@@ -942,7 +972,8 @@ def readPSfile(filename):
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
 
-            # go through again to collect hole card info
+            # go through again to...
+            # collect hole card info, check for bad names, find winner
             for line in lines:
                 maybePlayerName = line[:line.find(":")]
                 if line.find('sit')>=0:
@@ -954,6 +985,11 @@ def readPSfile(filename):
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
                     holeCards[maybePlayerName] = hc
+                elif 'collected' in line:
+                    amt = line[(line.find('($')+2):]
+                    amt = float(amt[:amt.find(')')])
+                    player = line[line:find(" ")]
+                    winnings[player] += amt
             
             for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
@@ -1090,25 +1126,19 @@ def readPSfile(filename):
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
                                   'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
-                                  'Filename':filename
+                                  'Winnings': winnings[maybePlayerName]
                                   }
                         try:
                             for ii in [1,2]:
                                 c = holeCards[maybePlayerName][ii-1]
-                                if c is not None:
+                                if c is None:
+                                    newRow['HoleCard'+str(ii)] = -1
+                                else:
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
                         except ValueError:
                             pass
-                        if newRow['NumPlayersLeft']>newRow['NumPlayers']:
-                            nplGnp.append({'file':filename,
-                                           'source':src,
-                                           'gamenum':stage,
-                                           'round':rd,
-                                           'roundActionNum':roundActionNum,
-                                           'npl':newRow['NumPlayersLeft'],
-                                           'np':numPlayers})
                         data.append(newRow)
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
@@ -1210,6 +1240,7 @@ def readPTYfile(filename):
             stacks = {}
             holeCards = {}
             roundInvestments = {}
+            winnings = {}
             lenBoard = 0
             lastNewRoundLine = -1
             
@@ -1222,6 +1253,7 @@ def readPTYfile(filename):
                 playerStart = line.find(":")+2
                 playerEnd = playerStart + line[playerStart:].find(' ')
                 player = line[playerStart:playerEnd]
+                assert not '$' in player and not ')' in player, "bad player name"
                 seats[player] = seatnum
                 seatnum += 1
                 seatnums.append(int(line[5:line.find(":")]))
@@ -1230,6 +1262,7 @@ def readPTYfile(filename):
                     assert startStacks[player]!=0, "start stack of 0"
                 stacks[player] = startStacks[player]
                 holeCards[player] = [None, None]
+                winnings[player] = 0.
                 roundInvestments[player] = 0
                 roundActionNum = 1
                 npl += 1
@@ -1238,7 +1271,8 @@ def readPTYfile(filename):
             # make dealer num relative to missing seats
             dealer = bisect_left(seatnums, dealer) % len(seatnums)
 
-            # go through again to collect hole card info
+            # go through again to...
+            # collect hole card info, check for bad names, find winner
             for line in lines:
                 maybePlayerName = line[:line.find(" ")]
                 assert line!="** Dealing **"
@@ -1248,6 +1282,10 @@ def readPTYfile(filename):
                     hc = line[(line.find("[")+2):(line.find("]")-1)]
                     hc = hc.split(", ")
                     holeCards[maybePlayerName] = hc
+                elif 'wins' in line:
+                    amt = line[(line.find('$')+1):]
+                    amt = float(amt[:amt.find('USD')])
+                    winnings[maybePlayerName] += amt
             
             for j,line in enumerate(lines):
                 # skip SUMMARY section by changing lineToRead when encounter it
@@ -1280,7 +1318,7 @@ def readPTYfile(filename):
                     elif rd.find("Card")>=0:
                         rd = 'Preflop'
                     else:
-                        raise ValueError                    
+                        raise ValueError
                 
                 # create new row IF row is an action (starts with encrypted player name)
                 elif maybePlayerName in seats.keys():
@@ -1386,12 +1424,14 @@ def readPTYfile(filename):
                               'NumPlayers': numPlayers,
                               'LenBoard': lenBoard,
                               'InvestedThisRound': roundInvestments[maybePlayerName] - amt,
-                              'Filename':filename
+                              'Winnings': winnings[maybePlayerName]
                              }
                     try:
                         for ii in [1,2]:
                             c = holeCards[maybePlayerName][ii-1]
-                            if c is not None:
+                            if c is None:
+                                newRow['HoleCard'+str(ii)] = -1
+                            else:
                                 newRow['HoleCard'+str(ii)] = deckT.index(c)
                         for ii in range(1,lenBoard+1):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
@@ -1410,9 +1450,8 @@ def readPTYfile(filename):
 keys = ['GameNum','RoundActionNum',
         'Date','Time','SeatNum','Round','Player','StartStack',
         'CurrentStack','Action','Amount','AllIn','CurrentBet','CurrentPot','InvestedThisRound',
-        'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers',
-        'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5',
-        'Filename']
+        'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers','Winnings',
+        'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5']
     
 def readFileToList(filename):
     # get dataframe from one of the source-specific functions
@@ -1474,7 +1513,7 @@ def readAllFiles(files, n):
     
     print datetime.datetime.now() - startTime
 
-chunkSize = 10
+chunkSize = 25
 
 # multi-threaded
 def worker(tup):
@@ -1488,7 +1527,7 @@ def worker(tup):
     for col in dfD:
         writeTo = "data/columns/{}.txt".format(col)
         with open(writeTo, 'ab') as outputFile:
-            outputFile.write(' '.join([str(c) for c in dfD[col]]))
+            outputFile.write('\n'.join([str(c) for c in dfD[col]]) + "\n")
             
     # write list to CSV
     dataWriteTo = "data/tables/poker{}.csv".format(i/chunkSize)
@@ -1509,11 +1548,40 @@ def getData(nFiles):
             outputFile.write(",".join(keys) + "\n")
     
     # multi-threaded CSV and txt writing
-    p = multiprocessing.Pool(8)
-    p.map_async(worker,enumerate(allFiles[:nFiles]))
-    p.close()
-    p.join()
+    #p = multiprocessing.Pool(8)
+    #p.map_async(worker,enumerate(allFiles[:nFiles]))
+    #p.close()
+    #p.join()
+    map(worker, enumerate(examples[:nFiles]))
     
     print "Current runtime:", datetime.datetime.now() - startTime
     
-getData(25)
+#getData(len(allFiles))
+getData(len(examples))
+
+########### fix up column files ################
+os.chdir('data/columns')
+
+# turn players to ints
+with open('Player.txt') as fIn, open('Player-.txt','ab') as fOut:
+    players = {}
+    i = 1
+    for p in fIn:
+        if p not in players:
+            players[p] = str(i)
+            i +=  1
+        fOut.write('{}\n'.format(players[p]))
+os.remove('Player.txt')
+os.rename('Player-.txt','Player.txt')
+    
+# turn gamenums to ints
+with open("GameNum.txt") as fIn, open('GameNum-.txt','ab') as fOut:
+    i = 0
+    lastG = -1
+    for g in f:
+        if g!=lastG:
+            fOut.write('{}\n'.format(str(i+1)))
+        else:
+            fOut.write('{}\n'.format(str(i)))
+os.remove('GameNum.txt')
+os.rename('GameNum-.txt','GameNum.txt')
