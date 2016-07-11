@@ -1552,12 +1552,11 @@ def getData(nFiles):
     #p.map_async(worker,enumerate(allFiles[:nFiles]))
     #p.close()
     #p.join()
-    map(worker, enumerate(examples[:nFiles]))
+    map(worker, enumerate(allFiles[:nFiles]))
     
     print "Current runtime:", datetime.datetime.now() - startTime
     
-#getData(len(allFiles))
-getData(len(examples))
+getData(len(allFiles))
 
 ########### fix up column files ################
 os.chdir('data/columns')
