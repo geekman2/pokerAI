@@ -290,7 +290,7 @@ def readABSfile(filename):
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
                 data.pop()
-        except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError) as e:
+        except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
             pass
     
     return data
@@ -701,7 +701,8 @@ def readONGfile(filename):
                     amt = line[(line.find('($')+2):]
                     amt = float(amt[:amt.find(')')])
                     player = line[(line.find('won by')+7):]
-                    winnings[maybePlayerName] += amt
+                    player = player[:player.find(" ")]
+                    winnings[player] += amt
 
             cardLines = [l for l in lines if l.find(", [")>=0]
             for line in cardLines:
@@ -864,8 +865,9 @@ def readONGfile(filename):
                         roundActionNum += 1
             if data[-1]['RoundActionNum']==1:
                 data.pop()
-        except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError):
-            pass
+        except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError) as e:
+            global errors
+            errors.append(sys.exc_info()[2])
         
     return data
 
@@ -985,10 +987,10 @@ def readPSfile(filename):
                     hc = line[(line.find("[")+1):line.find("]")]
                     hc = hc.split()
                     holeCards[maybePlayerName] = hc
-                elif 'collected' in line:
-                    amt = line[(line.find('($')+2):]
-                    amt = float(amt[:amt.find(')')])
-                    player = line[line:find(" ")]
+                elif 'collected' in line and 'from' in line:
+                    amt = line[(line.find('$')+1):]
+                    amt = float(amt[:amt.find(' ')])
+                    player = line[:line.find(" ")]
                     winnings[player] += amt
             
             for j,line in enumerate(lines):
@@ -1487,33 +1489,7 @@ def chunks(l,n):
     for i in range(0, len(l), n):
         yield l[i:i+n]
 
-def readAllFiles(files, n):
-    startTime = datetime.datetime.now()
-    
-    # write headers to CSVs
-    for i in xrange(len(files)/n + 1):
-        with open("data/tables/poker{}.csv".format(i),'w') as outputFile:
-            outputFile.write(",".join(keys) + "\n")
-    
-    for f in files:
-        dfL = readFileToList(f)
-        dfD = listToDict(dfL)
-        
-        # write columns to text files
-        for col in dfD:
-            writeTo = "data/columns/{}.txt".format(col)
-            with open(writeTo, 'ab') as outputFile:
-                outputFile.write(' '.join([str(c) for c in dfD[col]]))
-                
-        # write data to CSVs
-        dataWriteTo = "data/tables/poker{}.csv".format(i/n)
-        with open(dataWriteTo,'ab') as outputFile:
-            dictWriter = csv.DictWriter(outputFile, keys)
-            dictWriter.writerows(dfL)
-    
-    print datetime.datetime.now() - startTime
-
-chunkSize = 25
+chunkSize = 33
 
 # multi-threaded
 def worker(tup):
@@ -1524,10 +1500,12 @@ def worker(tup):
     dfD = listToDict(dfL)
     
     # write columns to text files
+    '''
     for col in dfD:
         writeTo = "data/columns/{}.txt".format(col)
         with open(writeTo, 'ab') as outputFile:
             outputFile.write('\n'.join([str(c) for c in dfD[col]]) + "\n")
+    '''
             
     # write list to CSV
     dataWriteTo = "data/tables/poker{}.csv".format(i/chunkSize)
@@ -1548,17 +1526,30 @@ def getData(nFiles):
             outputFile.write(",".join(keys) + "\n")
     
     # multi-threaded CSV and txt writing
-    #p = multiprocessing.Pool(8)
-    #p.map_async(worker,enumerate(allFiles[:nFiles]))
-    #p.close()
-    #p.join()
-    map(worker, enumerate(allFiles[:nFiles]))
+    p = multiprocessing.Pool(8)
+    p.map_async(worker,enumerate(allFiles[:nFiles]))
+    p.close()
+    p.join()
+    #map(worker, enumerate(examples[:nFiles]))
     
     print "Current runtime:", datetime.datetime.now() - startTime
+
+# generate examples
+import itertools
+import random
+srcs = ['abs','ftp','ong','ps','pty']
+stks = ['0.5','0.25','1','2','4','6','10']
+examples = []
+for sr,st in itertools.product(srcs,stks):
+    allMatches = [f for f in allFiles if f.find("/"+sr)>=0 and f.find("/"+st+"/")>=0]
+    if allMatches:
+        #examples += random.sample(allMatches,8)
+        examples.append(random.choice(allMatches))
     
-getData(len(allFiles))
+getData(len(examples))
 
 ########### fix up column files ################
+'''
 os.chdir('data/columns')
 
 # turn players to ints
@@ -1572,15 +1563,15 @@ with open('Player.txt') as fIn, open('Player-.txt','ab') as fOut:
         fOut.write('{}\n'.format(players[p]))
 os.remove('Player.txt')
 os.rename('Player-.txt','Player.txt')
-    
+
 # turn gamenums to ints
 with open("GameNum.txt") as fIn, open('GameNum-.txt','ab') as fOut:
     i = 0
     lastG = -1
     for g in f:
         if g!=lastG:
-            fOut.write('{}\n'.format(str(i+1)))
-        else:
-            fOut.write('{}\n'.format(str(i)))
+            i += 1
+        fOut.write('{}\n'.format(str(i)))
 os.remove('GameNum.txt')
 os.rename('GameNum-.txt','GameNum.txt')
+'''
