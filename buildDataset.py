@@ -7,8 +7,26 @@ from bisect import bisect_left
 import csv
 from itertools import izip, product, combinations
 
+##################################### TESTING #################################
+# write sample txt files
+for filename in os.listdir('data/columns'):
+    with open(filename) as fIn, open('testdata/{}'.format(filename)) as fOut:
+        col = []
+        for i,d in enumerate(fIn):
+            if i >= 10000:
+                break
+            col.append(d)
+        fOut.write('\n'.join(col))
+testColumnFiles = ['testdata/{}'.format(f) for f in os.listdir('testdata')]
+tableFiles = ['data/tables/{}'.format(f) for f in os.listdir('data/tables')]
+testTableFiles = tableFiles[:5]
+
+# TODO: move through columns, testing (the complicated ones) one by one
+        
+###############################################################################
+
 # CREATE FEATURE SET
-tableFiles = ["data/tables/"+f for f in os.listdir('data/tables')]
+# tableFiles already created in testing section
 columnFiles = ["data/columns/"+f for f in os.listdir('data/columns')]
 
 actions = ['none','deadblind','blind','fold','check','call','bet','raise']
@@ -211,7 +229,7 @@ for ii,filename in enumerate(tableFiles):
     featureSet['ThreeToFlushDrawFlop'] = (suitCountsFlop==3).sum(axis=1)>0
     
     # Flush draw on the turn (still 2 to a suit, not 3)
-    featureSet['ThreeToFlushDrawTurn'] = (suitCountsTurn==2).sum(axis=1)>0
+    featureSet['TwoToFlushDrawTurn'] = (suitCountsTurn==2).sum(axis=1)>0
     
     # Flush draw connects on the turn (from 2 to 3)
     featureSet['FlushTurned'] = (featureSet.TwoToFlushDrawFlop) & \
@@ -283,10 +301,10 @@ for ii,filename in enumerate(tableFiles):
     featureSet['AvgCardRankRiver'] = boardRanks.mean(axis=1)
     
     # turn is a brick (5 or less and not pair and not making a flush)
-    (boardRanks.Board4<=5) & (featureSet.NumPairsFlop==featureSet.NumPairsTurn) & (~featureSet.FlushTurned)
+    featureSet['TurnBrick'] = (boardRanks.Board4<=5) & (featureSet.NumPairsFlop==featureSet.NumPairsTurn) & (~featureSet.FlushTurned)
     
     # river is a brick (5 or less and not pair and not making a flush)
-    (boardRanks.Board5<=5) & (featureSet.NumPairsTurn==featureSet.NumPairsRIver) & (~featureSet.FlushRivered)
+    featureSet['RiverBrick'] = (boardRanks.Board5<=5) & (featureSet.NumPairsTurn==featureSet.NumPairsRIver) & (~featureSet.FlushRivered)
     
     #### OPPONENT FEATURES ######
     # mean/SD/max/min other stack, relative to big blind, relative to self
@@ -447,7 +465,7 @@ with open('Player.txt') as playerF, open('Action.txt') as actionF, \
     for a in actions:
         for r in rounds:
             f = open('{}{}Pct.txt'.format(r,a[:1].upper()+a[1:]),'ab')
-            f.write('\n'.join(colsToBeWritten[a][r]) + '\n')
+            f.write('\n'.join(colsToBeWritten[a][r]))
             f.close()
     colsToBeWritten,playerActionsByRound = [None]*2
 
@@ -455,7 +473,7 @@ with open('Player.txt') as playerF, open('Action.txt') as actionF, \
 # preflop raise %
 with open('Player.txt') as playerF, open('Round.txt') as roundF, \
         open('Action.txt') as actionF, open('VPIP.txt','ab') as vpipF, \
-        open('PreflopRaiseP','ab') as pfrF:
+        open('PreflopRaisePct','ab') as pfrF:
     vpip = []
     pfr = []
     playersCalls = {}
@@ -479,8 +497,8 @@ with open('Player.txt') as playerF, open('Round.txt') as roundF, \
             pfrF.write('\n'.join(pfr) + '\n')
             vpip = []
             pfr = []
-    vpipF.write('\n'.join(vpip) + '\n')
-    pfrF.write('\n'.join(pfr) + '\n')
+    vpipF.write('\n'.join(vpip))
+    pfrF.write('\n'.join(pfr))
     vpip,pfr,playersCalls,playersRaises,playersPreflopOps = [None]*4
     
 # net at table
@@ -507,7 +525,7 @@ with open('Player.txt') as playerF, open('Table.txt') as tableF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(nat) + '\n')
             nat = []
-    outF.write('\n'.join(nat) + '\n')
+    outF.write('\n'.join(nat))
     nat,playerTableStartStacks = [None]*2
 
 # sd of VPIP for each player
@@ -527,7 +545,7 @@ with open('Player.txt') as playerF, open('VPIP.txt') as vpipF, open('sdVPIP.txt'
         if i % 10000000 == 0:
             outF.write('\n'.join(sdv) + '\n')
             sdv = []
-    outF.write('\n'.join(sdv) + '\n')
+    outF.write('\n'.join(sdv))
     sdv,playerVPIP = [None]*2
 
 # 3-bet %
@@ -558,7 +576,7 @@ with open('Player.txt') as playerF, open('Round.txt') as roundF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(threeBets) + '\n')
             threeBets = []
-    outF.write('\n'.join(threeBets) + '\n')
+    outF.write('\n'.join(threeBets))
     threeBets,player3Bets,player3BetOpps = [None]*3
         
 # see showdown %
@@ -578,7 +596,7 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(ssPct) + '\n')
             ssPct = []
-    outF.write('\n'.join(ssPct) + '\n')
+    outF.write('\n'.join(ssPct))
     ssPct,playerGameSeesSD = [None]*2
 
 # average commitment folded
@@ -600,7 +618,7 @@ with open('Player.txt') as playerF, open('Action.txt') as actionF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(comfold) + '\n')
             comfold = []
-    outF.write('\n'.join(comfold) + '\n')
+    outF.write('\n'.join(comfold))
     comfold,playerComFolds = [None]*2
             
 # aggression factor overall
@@ -616,9 +634,17 @@ def getAF(r):
             if i % 10000000 == 0:
                 outF.write('\n'.join(af) + '\n')
                 af = []
-        outF.write('\n'.join(af) + '\n')
+        outF.write('\n'.join(af))
+        af = None
         
 getAF('All')
+
+# aggression factor on flop
+getAF('Flop')
+# aggression factor on turn
+getAF('Turn')
+# aggression factor on river
+getAF('River')
 
 # win % when see flop
 with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
@@ -642,7 +668,7 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(wf) + '\n')
             wf = []
-    outF.write('\n'.join(wf) + '\n')
+    outF.write('\n'.join(wf))
     wf,playerFlopWins,playerFlopOpps = [None]*3
 
 # win without showdown % (wins without showdown / total wins)
@@ -667,13 +693,13 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(wws) + '\n')
             wws = []
-    outF.write('\n'.join(wws) + '\n')
+    outF.write('\n'.join(wws))
     wws,playerWinsWSD,playerWins = [None]*3
 
 # win % at showdown
 with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         open('HoleCard1.txt') as cardF, open('Winnings.txt') as winF, \
-        open('WinWithoutShowdownPct.txt','ab') as outF:
+        open('WinAtShowdownPct.txt','ab') as outF:
     ws = []
     playerWinsAtSD = {}
     playerShowdowns = {}
@@ -693,15 +719,8 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(ws) + '\n')
             ws = []
-    outF.write('\n'.join(ws) + '\n')
+    outF.write('\n'.join(ws))
     ws,playerWinsAtSD,playerShowdowns = [None]*3
-
-# aggression factor on flop
-getAF('Flop')
-# aggression factor on turn
-getAF('Turn')
-# aggression factor on river
-getAF('River')
 
 # continuation bet %
 with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
@@ -733,7 +752,7 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         else:
             cb.append(-1)
         if i % 10000000 == 0:
-            outF.write('\n'.join(cb) + '\n')
+            outF.write('\n'.join(cb))
             cb = []
     cb,playerContBets,playerContBetOpps = [None]*3
 
@@ -756,7 +775,7 @@ with open('Player.txt') as playerF, open('Round.txt') as roundF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(br) + '\n')
             br = []
-    outF.write('\n'.join(br) + '\n')
+    outF.write('\n'.join(br))
     br,playerRiverBets,playerRiverOpps = [None]*3
     
 # call/raise preflop raise %
@@ -785,7 +804,7 @@ with open('Player.txt') as playerF, open('Round.txt') as roundF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(cpfr) + '\n')
             cpfr = []
-    outF.write('\n'.join(cpfr) + '\n')
+    outF.write('\n'.join(cpfr))
     cpfr,playerPFRCalls,playerPFROpps = [None]*3
         
 # fold to, call, raise C-bet %
@@ -831,9 +850,9 @@ with open('Player.txt') as playerF, open('Round.txt') as roundF, \
             outCallF.write('\n'.join(ccb) + '\n')
             outRaiseF.write('\n'.join(rcb) + '\n')
             fcb,ccb,rcb = [[]]*3
-    outFoldF.write('\n'.join(fcb) + '\n')
-    outCallF.write('\n'.join(ccb) + '\n')
-    outRaiseF.write('\n'.join(rcb) + '\n')
+    outFoldF.write('\n'.join(fcb))
+    outCallF.write('\n'.join(ccb))
+    outRaiseF.write('\n'.join(rcb))
     fcb,ccb,rcb = [None]*3
 
 # fold to, call, raise flop bet %
@@ -873,9 +892,9 @@ with open('Player.txt') as playerF, open('Round.txt') as roundF, \
             outCallF.write('\n'.join(cfb) + '\n')
             outRaiseF.write('\n'.join(rfb) + '\n')
             ffb,cfb,rfb = [[]]*3
-    outFoldF.write('\n'.join(ffb) + '\n')
-    outCallF.write('\n'.join(cfb) + '\n')
-    outRaiseF.write('\n'.join(rfb) + '\n')
+    outFoldF.write('\n'.join(ffb))
+    outCallF.write('\n'.join(cfb))
+    outRaiseF.write('\n'.join(rfb))
     ffb,cfb,rfb = [None]*3    
 
 # net from last hand, rel start stack
@@ -894,7 +913,7 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(nets) + '\n')
             nets = []
-    outF.write('\n'.join(nets) + '\n')
+    outF.write('\n'.join(nets))
     nets,playerLastStacks = [None]*2
 
 # participated in last hand
@@ -922,7 +941,7 @@ with open('Player.txt') as playerF, open('GameNum.txt') as gameF, \
         if i % 10000000 == 0:
             outF.write('\n'.join(plh) + '\n')
             plh = []
-        outF.write('\n'.join(plh) + '\n')
+        outF.write('\n'.join(plh))
         plh,PlayerPInLastHand,playerPInCurrentHand = [None]*3
 
 ############################ END OF COLUMN FEATURES #######################
@@ -934,23 +953,25 @@ os.system('paste -d"," *.txt >> features.csv')
 with open("features.csv") as f:
     rounds = ['Preflop','Flop','Turn','River']
     
-    # feature sets for different files
+    # target feature
     target = ['Action']
     
-    # for all subsets
-    generalFeatures = []
+    # features as dict
+    features = pd.read_csv('../../FeatureLists.csv').to_dict('list')
+    features = {c: [x for x in features[c] if type(x)==str]
+                            for c in features}
     
-    # Cards on the board or not?
-    boardFeatures = []
-                   
-    # Facing bet or not?
-    FBFeatures = []
-    nonFBFeatures = []
+    # features for each situation; general, fb, flop, turn, river
+    sits = [a+b for a,b in product(rounds,['f','t'])]
     
-    allFeatureSets = [generalFeatures+FBFeatures, generalFeatures+nonFBFeatures]
-    allFeatureSets += [generalFeatures+boardFeatures+FBFeatures,
-                       generalFeatures+boardFeatures+nonFBFeatures]*3
-    allFeatureSets = [['Player'] + target + features for features in allFeatureSets]
+    # combining section features; order of subsets:
+    # PFF, PFT, FF, FT, TF, TT, RF, RT
+    allFeatureSets = [features['All']]*8
+    for i in range(1,8,2):
+        allFeatureSets[i] += features['FacingBet']
+    for i,r in enumerate(['Flop','Turn','River']):
+        for j in [2+i*2, 3+i*2]:
+            allFeatureSets[j] += features['UpTo{}Only'.format(r)]
     
     # all files to be written to
     filenames = ['features-PFt', 'features-PFf', 'features-Ft', 'features-Ff',
