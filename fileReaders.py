@@ -1,8 +1,6 @@
-import sys
 import os
 import datetime
 import calendar
-import csv
 from copy import copy
 import locale
 from bisect import bisect_left
@@ -866,8 +864,7 @@ def readONGfile(filename):
             if data[-1]['RoundActionNum']==1:
                 data.pop()
         except (ValueError, IndexError, KeyError, TypeError, AttributeError, ZeroDivisionError, AssertionError) as e:
-            global errors
-            errors.append(sys.exc_info()[2])
+            pass
         
     return data
 
@@ -1455,25 +1452,25 @@ keys = ['GameNum','RoundActionNum',
         'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers','Winnings',
         'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5']
     
-def readFileToList(filename):
+def readFileToDict(filename):
     # get dataframe from one of the source-specific functions
     bf = filename[::-1]
-    src = bf[(bf.find("HLN")+3):bf.find("/")][::-1].strip()
+    src = bf[(bf.find('HLN')+3):bf.find('/')][::-1].strip()
     
-    if src=="ipn":
+    # skip ipn, don't have a parser for it
+    if src=='ipn':
         return []
+        
+    # execute read file
+    func = 'read{}file'.format(src.upper())
+    full = eval('{}({})'.format(func, filename))
     
-    func = "read" + src.upper() + "file"
-    full = eval(func+"('"+filename+"')")
-    
-    return full
-    
-def listToDict(df):    
+    # list to dict
     d = {}
     for k in keys:
-        d[k] = [row[k] if k in row.keys() else '' for row in df]
+        d[k] = [row[k] if k in row.keys() else '' for row in full]
+        
     return d
-    
         
 ####################### READ ALL FILES ########################################
 folders = ["rawdata/"+fdr for fdr in os.listdir('rawdata')]
@@ -1496,45 +1493,28 @@ def worker(tup):
     i,f = tup
     
     # read in data both ways
-    dfL = readFileToList(f)
-    dfD = listToDict(dfL)
+    df = readFileToDict(f)
     
     # write columns to text files
-    '''
-    for col in dfD:
+    for col in df:
         writeTo = "data/columns/{}.txt".format(col)
         with open(writeTo, 'ab') as outputFile:
             outputFile.write('\n'.join([str(c) for c in dfD[col]]) + "\n")
-    '''
-            
-    # write list to CSV
-    dataWriteTo = "data/tables/poker{}.csv".format(i/chunkSize)
-    with open(dataWriteTo,'ab') as outputFile:
-        dictWriter = csv.DictWriter(outputFile, keys)
-        dictWriter.writerows(dfL)
-        
+                    
 def getData(nFiles):
     startTime = datetime.datetime.now()
-    
-    # write headers to CSVs
-    nWrites = nFiles/chunkSize
-    if nFiles%chunkSize!=0:
-        nWrites += 1
-        
-    for i in xrange(nWrites):
-        with open("data/tables/poker{}.csv".format(i),'w') as outputFile:
-            outputFile.write(",".join(keys) + "\n")
     
     # multi-threaded CSV and txt writing
     p = multiprocessing.Pool(8)
     p.map_async(worker,enumerate(allFiles[:nFiles]))
     p.close()
     p.join()
-    #map(worker, enumerate(examples[:nFiles]))
+    #map(worker, enumerate(allFiles[:nFiles]))
     
     print "Current runtime:", datetime.datetime.now() - startTime
 
 # generate examples
+'''
 import itertools
 import random
 srcs = ['abs','ftp','ong','ps','pty']
@@ -1545,11 +1525,11 @@ for sr,st in itertools.product(srcs,stks):
     if allMatches:
         #examples += random.sample(allMatches,8)
         examples.append(random.choice(allMatches))
-    
-getData(len(examples))
-
-########### fix up column files ################
 '''
+ 
+getData(len(allFiles))
+
+# fix up column files
 os.chdir('data/columns')
 
 # turn players to ints
@@ -1574,4 +1554,8 @@ with open("GameNum.txt") as fIn, open('GameNum-.txt','ab') as fOut:
         fOut.write('{}\n'.format(str(i)))
 os.remove('GameNum.txt')
 os.rename('GameNum-.txt','GameNum.txt')
-'''
+
+# concat txt to CSV, split CSV
+os.system('paste -d"," *.txt >> ../tables/poker.csv')
+os.system('cd ../tables')
+os.system('split -l 500000 poker.csv v')
