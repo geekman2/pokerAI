@@ -1,4 +1,5 @@
 import os
+import shutil
 import datetime
 import calendar
 from copy import copy
@@ -1463,7 +1464,7 @@ def readFileToDict(filename):
         
     # execute read file
     func = 'read{}file'.format(src.upper())
-    full = eval('{}({})'.format(func, filename))
+    full = eval('{}("{}")'.format(func, filename))
     
     # list to dict
     d = {}
@@ -1482,12 +1483,6 @@ for f in ['tables','columns']:
     if not os.path.exists('data/'+f):
         os.mkdir('data/'+f)
 
-def chunks(l,n):
-    for i in range(0, len(l), n):
-        yield l[i:i+n]
-
-chunkSize = 33
-
 # multi-threaded
 def worker(tup):
     i,f = tup
@@ -1497,19 +1492,23 @@ def worker(tup):
     
     # write columns to text files
     for col in df:
-        writeTo = "data/columns/{}.txt".format(col)
-        with open(writeTo, 'ab') as outputFile:
-            outputFile.write('\n'.join([str(c) for c in dfD[col]]) + "\n")
+        writeTo = "data/columns/{}/{}.txt".format(col,i)
+        with open(writeTo, 'w') as outputFile:
+            outputFile.write('\n'.join([str(c) for c in df[col]]))
                     
 def getData(nFiles):
     startTime = datetime.datetime.now()
+    
+    # make column folders in data/columns
+    if len(os.listdir('data/columns'))==0:
+        for c in keys:
+            os.makedirs('data/columns/{}'.format(c))
     
     # multi-threaded CSV and txt writing
     p = multiprocessing.Pool(8)
     p.map_async(worker,enumerate(allFiles[:nFiles]))
     p.close()
     p.join()
-    #map(worker, enumerate(allFiles[:nFiles]))
     
     print "Current runtime:", datetime.datetime.now() - startTime
 
@@ -1526,11 +1525,17 @@ for sr,st in itertools.product(srcs,stks):
         #examples += random.sample(allMatches,8)
         examples.append(random.choice(allMatches))
 '''
- 
+
 getData(len(allFiles))
 
-# fix up column files
+# convert column folders to column files
 os.chdir('data/columns')
+
+folders = os.listdir(os.getcwd())
+for fdr in folders:
+    os.system('cat {0}/*.txt > {0}.txt'.format(fdr))
+for fdr in folders:
+    shutil.rmtree(fdr)
 
 # turn players to ints
 with open('Player.txt') as fIn, open('Player-.txt','ab') as fOut:
@@ -1558,4 +1563,4 @@ os.rename('GameNum-.txt','GameNum.txt')
 # concat txt to CSV, split CSV
 os.system('paste -d"," *.txt >> ../tables/poker.csv')
 os.system('cd ../tables')
-os.system('split -l 500000 poker.csv v')
+os.system('split -l 100000 poker.csv v')
