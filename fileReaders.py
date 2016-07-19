@@ -23,7 +23,7 @@ def toFloat(s):
         s[-3] = '.'
     return locale.atof(s)
 
-    # TODO: fix NumPlayers for games where someone is sitting out (same for all rows)
+# TODO: fix NumPlayers for games where someone is sitting out (same for all rows)
 
 def readABSfile(filename):
     # HANDS INFORMATION
@@ -60,6 +60,7 @@ def readABSfile(filename):
             tableStart = hand.find("\n") + 8
             tableEnd = tableStart + hand[tableStart:].find("(") - 1
             table = hand[tableStart:tableEnd]
+            assert len(table)<=22
             # add dealer
             dealerStart = hand.find("Seat #") + 6
             dealerEnd = dealerStart + hand[dealerStart:].find(" ")
@@ -340,6 +341,7 @@ def readFTPfile(filename):
             tableStart = hand.find("Table") + 6
             tableEnd = tableStart + hand[tableStart:].find(" ")
             table = hand[tableStart:tableEnd]
+            assert len(table)<=22
             # add dealer
             dealerStart = hand.find("seat #") + 6
             dealerEnd = dealerStart + hand[dealerStart:].find("\n")
@@ -621,6 +623,7 @@ def readONGfile(filename):
             tableStart = hand.find("Table") + 7
             tableEnd = tableStart + hand[tableStart:].find(" ")
             table = hand[tableStart:tableEnd]
+            assert len(table)<=22
             # add dealer
             dealerStart = hand.find("Button:") + 13
             dealerEnd = dealerStart + hand[dealerStart:].find("\n")
@@ -921,6 +924,7 @@ def readPSfile(filename):
             tableStart = hand.find("Table") + 7
             tableEnd = tableStart + hand[tableStart:].find("'")
             table = hand[tableStart:tableEnd]
+            assert len(table)<=22
             # add dealer
             dealerEnd = hand.find("is the button") - 1
             dealerStart = tableEnd + hand[tableEnd:].find("#") + 1
@@ -1209,6 +1213,7 @@ def readPTYfile(filename):
             tableStart = hand.find("Table") + 6
             tableEnd = tableStart + hand[tableStart:].find(" ")
             table = hand[tableStart:tableEnd]
+            assert len(table)<=22
             # add dealer
             dealerEnd = hand.find("is the button") - 1
             dealerStart = tableEnd + hand[tableEnd:].find("Seat ") + 5
@@ -1549,8 +1554,16 @@ os.chdir('../tables')
 os.system('sort -u boards.csv -o boards.csv')
 os.system('sort -u games.csv -o games.csv')
 
+# write headers to files
+for k,v in tableCols.iteritems():
+    with open('{}2.csv'.format(k),'w') as f:
+        f.write(','.join(v) + '\n')
+    os.system('cat {0}.csv >> {0}2.csv'.format(k))
+    os.remove('{}.csv'.format(k))
+    os.rename('{}2.csv'.format(k),'{}.csv'.format(k))
+
 # get password from file
-with open('pwd.txt') as f:
+with open('../../pwd.txt') as f:
     pwd = f.read().strip()
 
 # connect to DB
@@ -1599,7 +1612,7 @@ createGamesQuery = """create table games
                       Time time,
                       SmallBlind decimal(2,2),
                       BigBlind decimal(2,2),
-                      TableName varchar(36),
+                      TableName varchar(22),
                       Dealer tinyint(2),
                       NumPlayers tinyint(2),
                       PRIMARY KEY (GameNum)
