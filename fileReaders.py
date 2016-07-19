@@ -7,6 +7,7 @@ import locale
 from bisect import bisect_left
 import codecs
 import multiprocessing
+import MySQLdb
 
 locale.setlocale(locale.LC_NUMERIC, 'en_US.utf8')
 
@@ -21,6 +22,8 @@ def toFloat(s):
     if len(s)>=3 and s[-3]==',':
         s[-3] = '.'
     return locale.atof(s)
+
+# TODO: fix NumPlayers for games where someone is sitting out (same for all rows)
 
 def readABSfile(filename):
     # HANDS INFORMATION
@@ -267,7 +270,7 @@ def readABSfile(filename):
                                   'Time': timeObj,
                                   'SmallBlind': sb,
                                   'BigBlind': bb,
-                                  'Table': table.title(),
+                                  'TableName': table.title(),
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
@@ -283,6 +286,8 @@ def readABSfile(filename):
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deck10.index(board[ii-1])
+                            for ii in range(lenBoard+1,6):
+                                newRow["Board"+str(ii)] = -1
                         except ValueError:
                             pass
                         data.append(newRow)
@@ -541,7 +546,7 @@ def readFTPfile(filename):
                                   'Time': timeObj,
                                   'SmallBlind': sb,
                                   'BigBlind': bb,
-                                  'Table': table.title(),
+                                  'TableName': table.title(),
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
@@ -557,6 +562,8 @@ def readFTPfile(filename):
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                            for ii in range(lenBoard+1,6):
+                                newRow["Board"+str(ii)] = -1
                         except ValueError:
                             pass
                         data.append(newRow)
@@ -842,7 +849,7 @@ def readONGfile(filename):
                                   'Time': timeObj,
                                   'SmallBlind': sb,
                                   'BigBlind': bb,
-                                  'Table': table.title(),
+                                  'TableName': table.title(),
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
@@ -858,6 +865,8 @@ def readONGfile(filename):
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                            for ii in range(lenBoard+1,6):
+                                newRow["Board"+str(ii)] = -1
                         except ValueError:
                             pass
                         data.append(newRow)
@@ -1121,7 +1130,7 @@ def readPSfile(filename):
                                   'Time': timeObj,
                                   'SmallBlind': sb,
                                   'BigBlind': bb,
-                                  'Table': table.title(),
+                                  'TableName': table.title(),
                                   'Dealer': dealer,
                                   'NumPlayers': numPlayers,
                                   'LenBoard': lenBoard,
@@ -1137,6 +1146,8 @@ def readPSfile(filename):
                                     newRow['HoleCard'+str(ii)] = deckT.index(c)
                             for ii in range(1,lenBoard+1):
                                 newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                            for ii in range(lenBoard+1,6):
+                                newRow["Board"+str(ii)] = -1
                         except ValueError:
                             pass
                         data.append(newRow)
@@ -1419,7 +1430,7 @@ def readPTYfile(filename):
                               'Time': timeObj,
                               'SmallBlind': sb,
                               'BigBlind': bb,
-                              'Table': table.title(),
+                              'TableName': table.title(),
                               'Dealer': dealer,
                               'NumPlayers': numPlayers,
                               'LenBoard': lenBoard,
@@ -1435,6 +1446,8 @@ def readPTYfile(filename):
                                 newRow['HoleCard'+str(ii)] = deckT.index(c)
                         for ii in range(1,lenBoard+1):
                             newRow["Board"+str(ii)] = deckT.index(board[ii-1])
+                        for ii in range(lenBoard+1,6):
+                            newRow["Board"+str(ii)] = -1
                     except ValueError:
                         pass
                     data.append(newRow)
@@ -1447,10 +1460,9 @@ def readPTYfile(filename):
     return data
 
 ######################## READ ONE FILE ########################################
-keys = ['GameNum','RoundActionNum',
-        'Date','Time','SeatNum','Round','Player','StartStack',
+keys = ['GameNum','RoundActionNum','Date','Time','SeatNum','Round','Player','StartStack',
         'CurrentStack','Action','Amount','AllIn','CurrentBet','CurrentPot','InvestedThisRound',
-        'NumPlayersLeft','SmallBlind','BigBlind','Table','Dealer','NumPlayers','Winnings',
+        'NumPlayersLeft','SmallBlind','BigBlind','TableName','Dealer','NumPlayers','Winnings',
         'LenBoard','HoleCard1','HoleCard2','Board1','Board2','Board3','Board4','Board5']
     
 def readFileToDict(filename):
@@ -1487,23 +1499,18 @@ for f in ['tables','columns']:
 def worker(tup):
     i,f = tup
     
-    # read in data both ways
+    # read in data to dictionary
     df = readFileToDict(f)
     
     # write columns to text files
     for col in df:
-        writeTo = "data/columns/{}/{}.txt".format(col,i)
-        with open(writeTo, 'w') as outputFile:
-            outputFile.write('\n'.join([str(c) for c in df[col]]))
+        writeTo = "data/columns/{}.txt".format(col)
+        with open(writeTo, 'ab') as outputFile:
+            outputFile.write('\n'.join([str(c) for c in df[col]]) + "\n")
                     
 def getData(nFiles):
     startTime = datetime.datetime.now()
-    
-    # make column folders in data/columns
-    if len(os.listdir('data/columns'))==0:
-        for c in keys:
-            os.makedirs('data/columns/{}'.format(c))
-    
+        
     # multi-threaded CSV and txt writing
     p = multiprocessing.Pool(8)
     p.map_async(worker,enumerate(allFiles[:nFiles]))
@@ -1512,55 +1519,104 @@ def getData(nFiles):
     
     print "Current runtime:", datetime.datetime.now() - startTime
 
-# generate examples
-'''
-import itertools
-import random
-srcs = ['abs','ftp','ong','ps','pty']
-stks = ['0.5','0.25','1','2','4','6','10']
-examples = []
-for sr,st in itertools.product(srcs,stks):
-    allMatches = [f for f in allFiles if f.find("/"+sr)>=0 and f.find("/"+st+"/")>=0]
-    if allMatches:
-        #examples += random.sample(allMatches,8)
-        examples.append(random.choice(allMatches))
-'''
+#getData(len(allFiles))
+getData(100)
 
-getData(len(allFiles))
 
-# convert column folders to column files
+####################### DATA FORMATTING 2: THE SQL ############################
+# txt to CSVs, one per table in database
+gameFields = ['GameNum','Date','Time','SmallBlind','BigBlind','TableName',
+              'Dealer','NumPlayers']
+actionFields = ['GameNum','Player','Action','SeatNum','Round','RoundActionNum',
+                'StartStack','CurrentStack','Amount','CurrentBet','CurrentPot',
+                'InvestedThisRound','NumPlayersLeft','Winnings','HoleCard1','HoleCard2']
+boardFields = ['GameNum','Round'] + ['Board'+str(i) for i in range(1,6)]
+
+tableCols = {'games': gameFields, 'actions': actionFields, 'boards': boardFields}
+
 os.chdir('data/columns')
+    
+for k,v in tableCols.iteritems():
+    with open('../tables/{}.csv'.format(k),'w') as fOut:
+        fOut.write(','.join(v) + '\n')
+    files = ' '.join(fName+'.txt' for fName in v)
+    os.system('paste -d"," {} >> ../tables/{}.csv'.format(files,k))
 
-folders = os.listdir(os.getcwd())
-for fdr in folders:
-    os.system('cat {0}/*.txt > {0}.txt'.format(fdr))
-for fdr in folders:
-    shutil.rmtree(fdr)
+# import CSVs to database tables
+os.chdir('../tables')
 
-# turn players to ints
-with open('Player.txt') as fIn, open('Player-.txt','ab') as fOut:
-    players = {}
-    i = 1
-    for p in fIn:
-        if p not in players:
-            players[p] = str(i)
-            i +=  1
-        fOut.write('{}\n'.format(players[p]))
-os.remove('Player.txt')
-os.rename('Player-.txt','Player.txt')
+# remove duplicate rows from board, game CSVs
+os.system('sort -u boards.csv -o boards.csv')
+os.system('sort -u games.csv -o games.csv')
 
-# turn gamenums to ints
-with open("GameNum.txt") as fIn, open('GameNum-.txt','ab') as fOut:
-    i = 0
-    lastG = -1
-    for g in f:
-        if g!=lastG:
-            i += 1
-        fOut.write('{}\n'.format(str(i)))
-os.remove('GameNum.txt')
-os.rename('GameNum-.txt','GameNum.txt')
+# connect to DB
+db = MySQLdb.connect(host='localhost',port=3307,user='ntaylorwss',passwd='google.ca',
+                     db='poker')
+cursor = db.cursor()
 
-# concat txt to CSV, split CSV
-os.system('paste -d"," *.txt >> ../tables/poker.csv')
-os.system('cd ../tables')
-os.system('split -l 100000 poker.csv v')
+# queries to create tables
+createBoardsQuery = """create table boards
+                    ( GameNum varchar(22),
+                      Round varchar(7),
+                      Board1 tinyint(2),
+                      Board2 tinyint(2),
+                      Board3 tinyint(2),
+                      Board4 tinyint(2),
+                      Board5 tinyint(2),
+                      BoardID int NOT NULL,
+                      PRIMARY KEY (BoardID)
+                    );"""
+
+createActionsQuery = """create table actions 
+                    ( GameNum varchar(22),
+                      Player varchar(22),
+                      Action varchar(10),
+                      SeatNum tinyint(2),
+                      Round varchar(7),
+                      RoundActionNum tinyint(2),
+                      Amount decimal(8,2),
+                      StartStack decimal(8,2),
+                      CurrentStack decimal(8,2),
+                      CurrentBet decimal(8,2),
+                      CurrentPot decimal(8,2),
+                      InvestedThisRound decimal(8,2),
+                      NumPlayersLeft tinyint(2),
+                      Winnings decimal(8,2),
+                      HoleCard1 tinyint(2),
+                      HoleCard2 tinyint(2),
+                      ActionID int NOT NULL,
+                      PRIMARY KEY (ActionID),
+                      FOREIGN KEY (GameNum) REFERENCES games (GameNum)
+                    );"""
+                    
+createGamesQuery = """create table games 
+                    ( GameNum varchar(22),
+                      Date date,
+                      Time time,
+                      SmallBlind decimal(2,2),
+                      BigBlind decimal(2,2),
+                      TableName varchar(36),
+                      Dealer tinyint(2),
+                      NumPlayers tinyint(2),
+                      PRIMARY KEY (GameNum)
+                    );"""
+
+for q in [createGamesQuery,createBoardsQuery,createActionsQuery]: cursor.execute(q)
+
+# query to add CSV data to tables
+importQuery = """LOAD DATA LOCAL INFILE '{}'
+                INTO TABLE {}
+                FIELDS TERMINATED BY ','
+                OPTIONALLY ENCLOSED BY '"'
+                LINES TERMINATED BY '\\n'
+                IGNORE 1 LINES
+                ({});"""
+
+# games, then boards, then actions
+for f in sorted(os.listdir(os.getcwd()))[::-1]:
+    table = f[:-4]
+    try:
+        cursor.execute(importQuery.format(f, table, ','.join(tableCols[table])))
+        db.commit()
+    except Exception:
+        db.rollback()
