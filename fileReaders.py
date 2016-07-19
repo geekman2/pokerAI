@@ -23,7 +23,7 @@ def toFloat(s):
         s[-3] = '.'
     return locale.atof(s)
 
-# TODO: fix NumPlayers for games where someone is sitting out (same for all rows)
+    # TODO: fix NumPlayers for games where someone is sitting out (same for all rows)
 
 def readABSfile(filename):
     # HANDS INFORMATION
@@ -1549,8 +1549,12 @@ os.chdir('../tables')
 os.system('sort -u boards.csv -o boards.csv')
 os.system('sort -u games.csv -o games.csv')
 
+# get password from file
+with open('pwd.txt') as f:
+    pwd = f.read().strip()
+
 # connect to DB
-db = MySQLdb.connect(host='localhost',port=3307,user='ntaylorwss',passwd='google.ca',
+db = MySQLdb.connect(host='localhost',port=3307,user='ntaylorwss',passwd=pwd,
                      db='poker')
 cursor = db.cursor()
 
@@ -1613,6 +1617,7 @@ importQuery = """LOAD DATA LOCAL INFILE '{}'
                 ({});"""
 
 # games, then boards, then actions
+'''
 for f in sorted(os.listdir(os.getcwd()))[::-1]:
     table = f[:-4]
     try:
@@ -1620,3 +1625,4 @@ for f in sorted(os.listdir(os.getcwd()))[::-1]:
         db.commit()
     except Exception:
         db.rollback()
+'''
